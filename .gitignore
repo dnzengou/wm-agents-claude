@@ -1,0 +1,37 @@
+# ── Rust ─────────────────────────────────────────────────────────────────────
+worldmonitor-core/target/
+worldmonitor-core/*.db
+worldmonitor-core/data/
+worldmonitor-core/.env
+
+# ── Next.js ───────────────────────────────────────────────────────────────────
+worldmonitor-ui-components/.next/
+worldmonitor-ui-components/out/
+worldmonitor-ui-components/node_modules/
+worldmonitor-ui-components/.env.local
+worldmonitor-ui-components/.env.*.local
+
+# ── Secrets / env files ───────────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+*.env
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Archives / generated docs (not source) ────────────────────────────────────
+*.tar.gz
+*.zip
+*.pdf
+*.html
+worldmonitor-agents/
+worldmonitor-agents.tar.gz
+worldmonitor-ui-components.tar.gz
+worldmonitor-core.tar.gz
+worldmonitor-ui-enhanced.tar.gz
+worldmonitor-ui-fixed.tar.gz
+ziM2COae/

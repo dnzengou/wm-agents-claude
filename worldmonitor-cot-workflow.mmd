@@ -1,0 +1,239 @@
+%% WorldMonitor Chain-of-Thought Multi-Agent System Architecture
+%% Palantir Apollo/Chainalysis-inspired dark theme styling
+
+graph TB
+    %% ==================== STYLES ====================
+    classDef user fill:#1A1B1F,stroke:#00D4FF,stroke-width:2px,color:#FFFFFF
+    classDef api fill:#111214,stroke:#3B82F6,stroke-width:2px,color:#FFFFFF
+    classDef coordinator fill:#0A0B0D,stroke:#8B5CF6,stroke-width:3px,color:#FFFFFF
+    classDef agent fill:#111214,stroke:#00D4FF,stroke-width:2px,color:#FFFFFF
+    classDef datastore fill:#1A1B1F,stroke:#10B981,stroke-width:2px,color:#FFFFFF
+    classDef external fill:#25262C,stroke:#F59E0B,stroke-width:1px,color:#FFFFFF,stroke-dasharray: 5 5
+    classDef cot fill:#111214,stroke:#8B5CF6,stroke-width:2px,color:#FFFFFF
+    classDef output fill:#0A0B0D,stroke:#10B981,stroke-width:3px,color:#FFFFFF
+
+    %% ==================== USER LAYER ====================
+    subgraph User_Layer["👤 USER INTERFACE LAYER"]
+        UI[React Frontend<br/>Next.js + Tailwind]
+        CMD[Command Palette<br/>⌘K Search]
+        MAP[WebGL Map<br/>Deck.gl Visualization]
+        FEED[Activity Feed<br/>Real-time Events]
+    end
+
+    %% ==================== API GATEWAY ====================
+    subgraph API_Gateway["🌐 API GATEWAY"]
+        AXUM[Axum Router<br/>Rust + Tokio]
+        AUTH[JWT Auth<br/>Rate Limiting]
+        WS[WebSocket<br/>Real-time Stream]
+    end
+
+    %% ==================== COORDINATOR ====================
+    subgraph Coordinator["🎯 AGENT COORDINATOR"]
+        COORD[AgentCoordinator<br/>Task Router & Orchestrator]
+        QUEUE[TaskQueue<br/>Priority Queue]
+        CACHE[Results Cache<br/>Redis/SQLite]
+        MON[Agent Monitor<br/>Health Checks]
+    end
+
+    %% ==================== AGENT POOL ====================
+    subgraph Agent_Pool["🤖 SPECIALIZED AGENTS"]
+        subgraph DataCollection["📡 Data Collection"]
+            DC[DataCollector Agent]
+            GDELT[GDELT Connector]
+            RSS[RSS Aggregator]
+            API[API Polling]
+        end
+
+        subgraph Analysis["🔍 Analysis Engine"]
+            AN[Analyst Agent]
+            NER[Named Entity<br/>Recognition]
+            SENT[Sentiment<br/>Analysis]
+            CORR[Correlation<br/>Engine]
+        end
+
+        subgraph Forecasting["🔮 Predictive Intelligence"]
+            FC[Forecaster Agent]
+            TREND[Trend Detection]
+            RISK[Risk Scoring]
+            PRED[Event Prediction]
+        end
+
+        subgraph Validation["✓ Quality Assurance"]
+            VAL[Validator Agent]
+            FACT[Fact Checking]
+            CONF[Confidence<br/>Scoring]
+            DEDUP[Deduplication]
+        end
+
+        subgraph Notification["🔔 Alert System"]
+            NOT[Notifier Agent]
+            ALERT[Alert Router]
+            USER[User Preferences]
+            CHAN[Channel Manager<br/>Email/SMS/Push]
+        end
+    end
+
+    %% ==================== CHAIN OF THOUGHT ====================
+    subgraph ChainOfThought["🧠 CHAIN OF THOUGHT ENGINE"]
+        COT_CORE[CoT Processor]
+        STEP1[Step 1: Data Ingestion]
+        STEP2[Step 2: Entity Extraction]
+        STEP3[Step 3: Correlation Analysis]
+        STEP4[Step 4: Risk Assessment]
+        STEP5[Step 5: Confidence Validation]
+        MERGE[Step Merger<br/>Workflow Aggregation]
+        FINAL[Final Conclusion<br/>Confidence Score]
+    end
+
+    %% ==================== DATA LAYER ====================
+    subgraph Data_Layer["💾 PERSISTENCE LAYER"]
+        DB[(SQLite/PostgreSQL<br/>Events & Analytics)]
+        TS[(Time-Series DB<br/>Metrics & Trends)]
+        VECTOR[(Vector Store<br/>Embeddings)]
+        BLOB[(Object Storage<br/>Media & Reports)]
+    end
+
+    %% ==================== EXTERNAL SOURCES ====================
+    subgraph External["🌍 EXTERNAL DATA SOURCES"]
+        GDELT_API[GDELT API<br/>Global Events]
+        NEWS[RSS Feeds<br/>News Outlets]
+        TWITTER[X/Twitter API<br/>Social Signals]
+        DARK[Dark Web Monitors]
+        GEO[Geolocation APIs]
+    end
+
+    %% ==================== OUTPUTS ====================
+    subgraph Outputs["📊 OUTPUT CHANNELS"]
+        DASH[Dashboard Updates]
+        ALERTS[User Alerts]
+        REPORTS[Generated Reports]
+        EXPORT[Data Export<br/>JSON/CSV/PDF]
+    end
+
+    %% ==================== FLOW CONNECTIONS ====================
+    
+    %% User to API
+    UI --> AXUM
+    CMD --> AXUM
+    MAP --> AXUM
+    FEED --> WS
+
+    %% API to Coordinator
+    AXUM --> AUTH --> COORD
+    WS --> COORD
+
+    %% Coordinator to Queue
+    COORD --> QUEUE
+    QUEUE --> DC
+    QUEUE --> AN
+    QUEUE --> FC
+    QUEUE --> VAL
+    QUEUE --> NOT
+
+    %% Data Collection Flow
+    DC --> GDELT
+    DC --> RSS
+    DC --> API
+    GDELT --> GDELT_API
+    RSS --> NEWS
+    API --> TWITTER
+    API --> DARK
+    API --> GEO
+
+    %% Data to Analysis
+    DC -->|Raw Events| STEP1
+    STEP1 -->|Structured Data| AN
+    AN --> NER
+    AN --> SENT
+    AN --> CORR
+    AN -->|Entities & Sentiment| STEP2
+
+    %% Analysis to Forecasting
+    STEP2 -->|Correlated Events| FC
+    FC --> TREND
+    FC --> RISK
+    FC --> PRED
+    FC -->|Risk Scores| STEP3
+
+    %% Forecasting to Validation
+    STEP3 -->|Predictions| VAL
+    VAL --> FACT
+    VAL --> CONF
+    VAL --> DEDUP
+    VAL -->|Validated Results| STEP4
+
+    %% Validation to Notification
+    STEP4 -->|Verified Alerts| NOT
+    NOT --> ALERT
+    NOT --> USER
+    NOT --> CHAN
+    NOT -->|Alert Status| STEP5
+
+    %% Chain of Thought Aggregation
+    STEP1 --> MERGE
+    STEP2 --> MERGE
+    STEP3 --> MERGE
+    STEP4 --> MERGE
+    STEP5 --> MERGE
+    MERGE --> FINAL
+    FINAL --> COT_CORE
+
+    %% Persistence
+    DC -->|Store Events| DB
+    AN -->|Store Analytics| DB
+    FC -->|Store Predictions| TS
+    NER -->|Store Embeddings| VECTOR
+    NOT -->|Store Alerts| DB
+    FINAL -->|Store CoT| DB
+
+    %% Cache
+    COORD --> CACHE
+    CACHE -->|Cached Results| COORD
+
+    %% Monitoring
+    COORD --> MON
+    MON -->|Health Status| COORD
+
+    %% Outputs
+    COT_CORE --> DASH
+    NOT --> ALERTS
+    AN --> REPORTS
+    DB --> EXPORT
+    DASH --> UI
+    ALERTS --> WS
+
+    %% ==================== ANNOTATIONS ====================
+    
+    NOTE1["⚡ Async Message Passing<br/>Tokio Channels"]
+    NOTE2["🔄 Retry Logic<br/>Exponential Backoff"]
+    NOTE3["📊 Metrics Collection<br/>Prometheus/Grafana"]
+
+    COORD -.-> NOTE1
+    DC -.-> NOTE2
+    MON -.-> NOTE3
+
+    %% Apply styles
+    class UI,CMD,MAP,FEED user
+    class AXUM,AUTH,WS api
+    class COORD coordinator
+    class DC,AN,FC,VAL,NOT,GDELT,RSS,API,NER,SENT,CORR,TREND,RISK,PRED,FACT,CONF,DEDUP,ALERT,USER,CHAN agent
+    class DB,TS,VECTOR,BLOB datastore
+    class GDELT_API,NEWS,TWITTER,DARK,GEO external
+    class COT_CORE,STEP1,STEP2,STEP3,STEP4,STEP5,MERGE,FINAL cot
+    class DASH,ALERTS,REPORTS,EXPORT output
+    class QUEUE,CACHE,MON coordinator
+
+    %% ==================== SUBGRAPH STYLING ====================
+    style User_Layer fill:#0A0B0D,stroke:#00D4FF,stroke-width:2px,color:#FFFFFF
+    style API_Gateway fill:#0A0B0D,stroke:#3B82F6,stroke-width:2px,color:#FFFFFF
+    style Coordinator fill:#0A0B0D,stroke:#8B5CF6,stroke-width:3px,color:#FFFFFF
+    style Agent_Pool fill:#0A0B0D,stroke:#00D4FF,stroke-width:2px,color:#FFFFFF
+    style DataCollection fill:#111214,stroke:#00D4FF,stroke-width:1px,color:#FFFFFF
+    style Analysis fill:#111214,stroke:#F59E0B,stroke-width:1px,color:#FFFFFF
+    style Forecasting fill:#111214,stroke:#8B5CF6,stroke-width:1px,color:#FFFFFF
+    style Validation fill:#111214,stroke:#10B981,stroke-width:1px,color:#FFFFFF
+    style Notification fill:#111214,stroke:#EF4444,stroke-width:1px,color:#FFFFFF
+    style ChainOfThought fill:#0A0B0D,stroke:#8B5CF6,stroke-width:3px,color:#FFFFFF
+    style Data_Layer fill:#0A0B0D,stroke:#10B981,stroke-width:2px,color:#FFFFFF
+    style External fill:#0A0B0D,stroke:#F59E0B,stroke-width:2px,stroke-dasharray: 5 5,color:#FFFFFF
+    style Outputs fill:#0A0B0D,stroke:#10B981,stroke-width:3px,color:#FFFFFF

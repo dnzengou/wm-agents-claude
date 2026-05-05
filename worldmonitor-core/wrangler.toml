@@ -1,0 +1,54 @@
+# Cloudflare Workers Configuration for WorldMonitor Core
+# This replaces the 60+ Vercel Edge Functions with a single Cloudflare Worker
+
+name = "worldmonitor-core"
+main = "worker/build/worker.js"
+compatibility_date = "2024-01-01"
+
+# Free tier limits (sufficient for 100k MAU):
+# - 100,000 requests/day
+# - 10ms CPU time per request
+# - 1GB D1 storage (30 days of events)
+
+[[d1_databases]]
+binding = "DB"
+database_name = "worldmonitor-intelligence"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "your_kv_namespace_id"
+
+[ai]
+binding = "AI"
+
+[vars]
+ENVIRONMENT = "production"
+MAX_ALERTS_FREE = "3"
+
+# Secrets (set via wrangler secret put):
+# GROQ_API_KEY
+
+# Build configuration
+[build]
+command = "npm run build:worker"
+
+# Routes
+[[routes]]
+pattern = "worldmonitor.app/*"
+custom_domain = true
+
+# Caching rules
+[[rules]]
+type = "CacheRule"
+pattern = "/api/intelligence"
+ttl = 300  # 5 minutes
+
+[[rules]]
+type = "CacheRule"
+pattern = "/api/geo"
+ttl = 3600  # 1 hour
+
+# Cron trigger for data ingestion (every 15 minutes)
+[[triggers]]
+crons = ["*/15 * * * *"]
