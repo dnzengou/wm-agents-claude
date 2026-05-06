@@ -151,14 +151,14 @@ pub struct RssResponse {
 }
 
 /// GeoJSON for map rendering
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoJson {
     #[serde(rename = "type")]
     pub geo_type: String,
     pub features: Vec<GeoFeature>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoFeature {
     #[serde(rename = "type")]
     pub feature_type: String,
@@ -166,14 +166,14 @@ pub struct GeoFeature {
     pub properties: GeoProperties,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoGeometry {
     #[serde(rename = "type")]
     pub geometry_type: String,
     pub coordinates: Vec<f64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoProperties {
     pub country: String,
     pub severity: i32,
@@ -406,7 +406,7 @@ pub mod responses {
         pub message: Option<String>,
     }
 
-    #[derive(Debug, Serialize)]
+    #[derive(Debug, Serialize, Deserialize)]
     pub struct UserResponse {
         pub user_id: String,
         pub streak: i32,

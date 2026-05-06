@@ -54,6 +54,9 @@ rss = "2.0"
 # HTML escaping
 html-escape = "0.2"
 
+# URL encoding (used in core/mod.rs for GDELT feed URLs)
+urlencoding = "2.1"
+
 # Regex for text processing
 regex = "1.10"
 

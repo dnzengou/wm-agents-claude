@@ -28,6 +28,8 @@ Thumbs.db
 *.zip
 *.pdf
 *.html
+# But keep the embedded frontend HTML
+!worldmonitor-core/static/*.html
 worldmonitor-agents/
 worldmonitor-agents.tar.gz
 worldmonitor-ui-components.tar.gz
