@@ -11,7 +11,7 @@ license = "MIT"
 tokio = { version = "1.35", features = ["full"] }
 axum = { version = "0.7", features = ["macros"] }
 tower = { version = "0.4", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors", "fs", "compression"] }
+tower-http = { version = "0.5", features = ["cors", "fs", "compression-full"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
