@@ -6,7 +6,7 @@ FROM rust:1.86-slim-bookworm AS deps
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev \
+    pkg-config libssl-dev libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml ./

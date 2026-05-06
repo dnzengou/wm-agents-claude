@@ -6,7 +6,7 @@ FROM rust:1.86-slim-bookworm AS deps
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev \
+    pkg-config libssl-dev libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Build context is the repo root; source lives in worldmonitor-core/
@@ -31,7 +31,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libssl3 curl \
+    ca-certificates libssl3 libsqlite3-0 curl \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /app/data
 
