@@ -91,8 +91,8 @@ jobs:
       - name: Build image (no push — smoke test only)
         uses: docker/build-push-action@v5
         with:
-          context: worldmonitor-core
-          file: worldmonitor-core/Dockerfile
+          context: .
+          file: Dockerfile
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -1,6 +1,6 @@
-# ── Stage 1: dependency cache layer ──────────────────────────────────────────
-# Separate layer so `cargo build --release` only re-runs when src changes,
-# not on every Cargo.lock touch.
+# ── Stage 1: dependency cache ─────────────────────────────────────────────────
+# Copy only Cargo.toml first so this layer is reused as long as deps don't change.
+# Cargo.lock is intentionally omitted — it is not committed to this repo.
 FROM rust:1.77-slim-bookworm AS deps
 
 WORKDIR /app
@@ -9,8 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY Cargo.toml ./
-# Build a dummy main to cache dependencies (Cargo.lock is not committed)
+# Build context is the repo root; source lives in worldmonitor-core/
+COPY worldmonitor-core/Cargo.toml ./
+
 RUN mkdir src && echo "fn main() {}" > src/main.rs \
     && cargo build --release \
     && rm -rf src
@@ -18,12 +19,13 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 # ── Stage 2: full build ───────────────────────────────────────────────────────
 FROM deps AS builder
 
-COPY src ./src
-COPY static ./static
-# Touch main.rs so cargo knows src changed
+COPY worldmonitor-core/src ./src
+COPY worldmonitor-core/static ./static
+
+# Force cargo to recompile our code (not deps)
 RUN touch src/main.rs && cargo build --release
 
-# ── Stage 3: minimal runtime image ───────────────────────────────────────────
+# ── Stage 3: minimal runtime ──────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
 WORKDIR /app
