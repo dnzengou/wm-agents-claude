@@ -1,7 +1,7 @@
 # ── Stage 1: dependency cache ─────────────────────────────────────────────────
 # Copy only Cargo.toml first so this layer is reused as long as deps don't change.
 # Cargo.lock is intentionally omitted — it is not committed to this repo.
-FROM rust:1.77-slim-bookworm AS deps
+FROM rust:1.86-slim-bookworm AS deps
 
 WORKDIR /app
 
