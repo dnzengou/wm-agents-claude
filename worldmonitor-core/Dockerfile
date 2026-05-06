@@ -9,9 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY Cargo.toml Cargo.lock ./
-# Build a dummy main to cache dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs \
+COPY Cargo.toml ./
+# Generate lockfile and build a dummy main to cache dependencies
+RUN cargo generate-lockfile \
+    && mkdir src && echo "fn main() {}" > src/main.rs \
     && cargo build --release \
     && rm -rf src
 
