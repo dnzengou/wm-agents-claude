@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from '@/components/dashboard/StatusBar';
 import { GlobalLiveFeed, LiveEvent } from '@/components/dashboard/GlobalLiveFeed';
 import { AgentStatus, Agent } from '@/components/dashboard/AgentStatus';
@@ -10,7 +10,7 @@ import { CommandPalette } from '@/components/ui/CommandPalette';
 import { GateBanner } from '@/components/ui/MonetizationGate';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useIntelligence } from '@/hooks/useIntelligence';
-import { IntelEvent, scoredToLabel } from '@/lib/api';
+import { api, Brief, IntelEvent, scoredToLabel } from '@/lib/api';
 import { getUserPrefs } from '@/lib/user';
 import type { Command } from '@/types';
 
@@ -41,13 +41,28 @@ function toLiveEvent(event: IntelEvent, index: number): LiveEvent {
   };
 }
 
-/** Derive simulated agents from the current event set */
-function deriveAgents(events: IntelEvent[]): Agent[] {
+/** Derive agents from event data + real brief state */
+function deriveAgents(
+  events: IntelEvent[],
+  brief: Brief | null,
+  briefLoading: boolean,
+): Agent[] {
   const gdeltCount = events.filter(e => e.source === 'gdelt').length;
   const rssCount = events.filter(e => e.source === 'rss').length;
   const avgSeverity = events.length > 0
     ? events.reduce((s, e) => s + e.severity, 0) / events.length
     : 0;
+
+  // AG03 activity: show real brief summary when available (truncated to ~110 chars)
+  const ag03Activity = brief
+    ? brief.summary.length > 110
+      ? brief.summary.slice(0, 107) + '…'
+      : brief.summary
+    : briefLoading
+    ? 'Synthesising brief via Groq LLaMA-3…'
+    : events.length > 0
+    ? `Severity avg: ${avgSeverity.toFixed(1)}/10`
+    : 'Awaiting data';
 
   return [
     {
@@ -76,22 +91,36 @@ function deriveAgents(events: IntelEvent[]): Agent[] {
     },
     {
       id: 'ag03',
-      name: 'AGENT_ANALYST',
-      status: events.length > 0 ? 'active' : 'idle',
-      lastActivity: events.length > 0 ? `Severity avg: ${avgSeverity.toFixed(1)}/10` : 'Awaiting data',
+      name: 'AGENT_BRIEF',
+      status: brief ? 'active' : briefLoading ? 'thinking' : events.length > 0 ? 'active' : 'idle',
+      lastActivity: ag03Activity,
       metrics: {
-        tasksProcessed: events.length,
-        latency: 8,
-        confidence: 94,
+        tasksProcessed: brief ? brief.event_count : events.length,
+        latency: brief ? 320 : 8,
+        confidence: brief ? 92 : 94,
       },
     },
   ];
 }
 
-/** Derive reasoning trace from event data */
-function deriveTrace(events: IntelEvent[]): ReasoningStep[] {
+/** Derive reasoning trace from event data + real brief */
+function deriveTrace(
+  events: IntelEvent[],
+  brief: Brief | null,
+  briefLoading: boolean,
+): ReasoningStep[] {
   const total = events.length;
   const high = events.filter(e => e.severity >= 7).length;
+
+  // Step 5 brief text — show first sentence of the real summary when available
+  const briefDesc = brief
+    ? (() => {
+        const firstSentence = brief.summary.split(/[.!?]/)[0].trim();
+        return `AG03 brief (${brief.country}, ${brief.event_count} events): "${firstSentence}."`;
+      })()
+    : briefLoading
+    ? 'AG03 querying Groq LLaMA-3 to synthesise country brief…'
+    : 'Pending sufficient event data for brief generation.';
 
   return [
     {
@@ -129,6 +158,15 @@ function deriveTrace(events: IntelEvent[]): ReasoningStep[] {
         : 'Awaiting sufficient data to assess risk.',
       status: total > 20 ? 'completed' : total > 10 ? 'current' : 'pending',
       confidence: total > 10 ? 88 : undefined,
+    },
+    {
+      id: 'step-5',
+      order: 5,
+      title: 'Step 5: AI Brief Generation',
+      description: briefDesc,
+      status: brief ? 'completed' : briefLoading ? 'current' : 'pending',
+      confidence: brief ? 92 : undefined,
+      timestamp: brief ? 'Groq LLaMA-3' : undefined,
     },
   ];
 }
@@ -287,19 +325,46 @@ export function DashboardClient({ initialEvents }: Props) {
     pollInterval: 30_000,
   });
 
+  const prefs = useMemo(() => {
+    try { return getUserPrefs(); } catch { return { tier: 'free' as const, interests: [], countries: [] }; }
+  }, []);
+
+  // ── CoT: real Groq brief via AG03 ─────────────────────────────────────────
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  // Track which country we last fetched a brief for (avoid redundant calls)
+  const lastBriefCountry = useRef<string | null>(null);
+
+  // Top country by severity — used as the brief target and as a stable dep
+  const topCountry = useMemo(
+    () =>
+      events.length > 0
+        ? [...events].sort((a, b) => b.severity - a.severity)[0].country
+        : null,
+    [events],
+  );
+
+  // Trigger brief fetch when the top-severity country first becomes known
+  useEffect(() => {
+    if (!topCountry) return;
+    if (topCountry === lastBriefCountry.current) return; // already fetched for this country
+    lastBriefCountry.current = topCountry;
+    setBriefLoading(true);
+    api.brief
+      .generate(topCountry, prefs.interests)
+      .then(b => { setBrief(b); setBriefLoading(false); })
+      .catch(() => setBriefLoading(false));
+  }, [topCountry]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ──────────────────────────────────────────────────────────────────────────
+
   const [layers, setLayers] = useState<Layer[]>(() => {
-    // Set counts from initial event data
     const counts: Record<string, number> = { geopolitical: events.length };
     return DEFAULT_LAYERS.map(l => ({ ...l, count: counts[l.id] ?? l.count }));
   });
 
   const liveEvents = useMemo(() => events.map(toLiveEvent), [events]);
-  const agents = useMemo(() => deriveAgents(events), [events]);
-  const traceSteps = useMemo(() => deriveTrace(events), [events]);
-
-  const prefs = useMemo(() => {
-    try { return getUserPrefs(); } catch { return { tier: 'free' as const, interests: [], countries: [] }; }
-  }, []);
+  const agents = useMemo(() => deriveAgents(events, brief, briefLoading), [events, brief, briefLoading]);
+  const traceSteps = useMemo(() => deriveTrace(events, brief, briefLoading), [events, brief, briefLoading]);
 
   const handleToggleLayer = useCallback((id: string) => {
     setLayers(prev => prev.map(l => l.id === id ? { ...l, enabled: !l.enabled } : l));

@@ -62,11 +62,12 @@ export type SyncResult = {
 
 async function req<T>(
   path: string,
-  init?: RequestInit & { next?: { revalidate?: number } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  init?: RequestInit & { next?: any },
 ): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-    ...init,
+    ...(init as RequestInit),
   });
 
   if (!res.ok) {

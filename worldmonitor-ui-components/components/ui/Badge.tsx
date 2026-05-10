@@ -3,16 +3,19 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 
-export type BadgeVariant = 
-  | 'critical' 
-  | 'high' 
-  | 'medium' 
-  | 'low' 
-  | 'info' 
-  | 'cyan' 
-  | 'green' 
-  | 'purple' 
-  | 'default';
+export type BadgeVariant =
+  | 'critical'
+  | 'high'
+  | 'medium'
+  | 'low'
+  | 'info'
+  | 'cyan'
+  | 'green'
+  | 'purple'
+  | 'default'
+  | 'neon'
+  | 'success'
+  | 'warning';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -32,6 +35,9 @@ export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
       green: 'bg-accent-green/15 text-accent-green border-accent-green/30',
       purple: 'bg-accent-purple/15 text-accent-purple border-accent-purple/30',
       default: 'bg-bg-tertiary text-text-secondary border-border-default',
+      neon: 'bg-neon/15 text-neon border-neon/30',
+      success: 'bg-success/15 text-success border-success/30',
+      warning: 'bg-warning/15 text-warning border-warning/30',
     };
 
     const dotColors: Record<BadgeVariant, string> = {
@@ -44,6 +50,9 @@ export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
       green: 'bg-accent-green',
       purple: 'bg-accent-purple',
       default: 'bg-text-secondary',
+      neon: 'bg-neon',
+      success: 'bg-success',
+      warning: 'bg-warning',
     };
 
     return (

@@ -11,7 +11,7 @@ export { AIInsightsPanel } from './AIInsightsPanel';
 export type { AIInsightsPanelProps, AIInsight, ReasoningStep } from './AIInsightsPanel';
 
 export { AgentStatus } from './AgentStatus';
-export type { AgentStatusProps, Agent, AgentStatus } from './AgentStatus';
+export type { AgentStatusProps, Agent, AgentStatus as AgentStatusType } from './AgentStatus';
 
 export { ReasoningTrace } from './ReasoningTrace';
 export type { ReasoningTraceProps, ReasoningStep as TraceStep } from './ReasoningTrace';
