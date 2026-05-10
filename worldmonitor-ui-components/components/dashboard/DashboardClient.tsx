@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { StatusBar } from '@/components/dashboard/StatusBar';
 import { GlobalLiveFeed, LiveEvent } from '@/components/dashboard/GlobalLiveFeed';
 import { AgentStatus, Agent } from '@/components/dashboard/AgentStatus';
@@ -13,6 +14,20 @@ import { useIntelligence } from '@/hooks/useIntelligence';
 import { api, Brief, IntelEvent, scoredToLabel } from '@/lib/api';
 import { getUserPrefs } from '@/lib/user';
 import type { Command } from '@/types';
+
+// Leaflet uses window at import time — must be loaded client-side only
+const WorldMap = dynamic(
+  () => import('@/components/map/WorldMap').then(m => m.WorldMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-obsidian gap-3">
+        <div className="w-6 h-6 border-2 border-neon border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs text-text-muted">Loading map…</span>
+      </div>
+    ),
+  },
+);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -193,125 +208,6 @@ const COMMANDS: Command[] = [
   { id: '8', title: 'Settings: Preferences', category: 'Settings', shortcut: '⌘,', icon: '⚙️', action: () => {} },
 ];
 
-// ─── WorldMap (SVG) ──────────────────────────────────────────────────────────
-
-function WorldMap({ events }: { events: IntelEvent[] }) {
-  const W = 900;
-  const H = 450;
-
-  const toXY = (lat: number, lon: number) => ({
-    x: ((lon + 180) / 360) * W,
-    y: ((90 - lat) / 180) * H,
-  });
-
-  const dots = useMemo(
-    () =>
-      events.slice(0, 80).map(e => {
-        const { x, y } = toXY(e.lat, e.lon);
-        const r = Math.max(3, Math.min(10, e.severity * 0.9));
-        const color =
-          e.severity >= 8 ? '#FF3E3E'
-          : e.severity >= 6 ? '#FFB800'
-          : e.severity >= 4 ? '#00F5FF'
-          : '#00E676';
-        return { id: e.id, x, y, r, color, headline: e.headline, country: e.country };
-      }),
-    [events],
-  );
-
-  const critCount = events.filter(e => e.severity >= 8).length;
-  const highCount = events.filter(e => e.severity >= 6).length;
-
-  return (
-    <div className="w-full h-full bg-obsidian flex flex-col items-center justify-center relative overflow-hidden">
-      {/* Grid background */}
-      <div className="absolute inset-0 bg-grid opacity-20 pointer-events-none" />
-
-      {/* Stats overlay */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-6 z-10">
-        <div className="glass-panel rounded-lg px-4 py-2 flex items-center gap-6 text-center">
-          <div>
-            <div className="text-lg font-bold text-alert">{critCount}</div>
-            <div className="text-2xs text-text-muted uppercase tracking-wider">Critical</div>
-          </div>
-          <div className="w-px h-8 bg-border-default" />
-          <div>
-            <div className="text-lg font-bold text-warning">{highCount}</div>
-            <div className="text-2xs text-text-muted uppercase tracking-wider">High</div>
-          </div>
-          <div className="w-px h-8 bg-border-default" />
-          <div>
-            <div className="text-lg font-bold text-neon">{events.length}</div>
-            <div className="text-2xs text-text-muted uppercase tracking-wider">Total</div>
-          </div>
-        </div>
-      </div>
-
-      {/* SVG map */}
-      <div className="w-full max-w-5xl px-4">
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          className="w-full h-auto"
-          style={{ filter: 'drop-shadow(0 0 12px rgba(0,245,255,0.05))' }}
-        >
-          {/* Graticule */}
-          {[-60, -30, 0, 30, 60].map(lat => {
-            const { y } = toXY(lat, 0);
-            return (
-              <line key={`lat${lat}`} x1={0} y1={y} x2={W} y2={y}
-                stroke="rgba(255,255,255,0.04)" strokeWidth={0.5} />
-            );
-          })}
-          {[-120, -60, 0, 60, 120].map(lon => {
-            const { x } = toXY(0, lon);
-            return (
-              <line key={`lon${lon}`} x1={x} y1={0} x2={x} y2={H}
-                stroke="rgba(255,255,255,0.04)" strokeWidth={0.5} />
-            );
-          })}
-
-          {/* Event dots */}
-          {dots.map(d => (
-            <g key={d.id}>
-              {/* Outer glow pulse */}
-              <circle cx={d.x} cy={d.y} r={d.r * 2}
-                fill={d.color} opacity={0.08} />
-              {/* Main dot */}
-              <circle cx={d.x} cy={d.y} r={d.r}
-                fill={d.color} opacity={0.85}>
-                <title>{`${d.country}: ${d.headline}`}</title>
-              </circle>
-            </g>
-          ))}
-        </svg>
-      </div>
-
-      {/* Legend */}
-      <div className="absolute bottom-4 right-4 glass-panel rounded-lg px-3 py-2 flex items-center gap-4">
-        {[
-          { color: '#FF3E3E', label: 'Critical 8–10' },
-          { color: '#FFB800', label: 'High 6–7' },
-          { color: '#00F5FF', label: 'Medium 4–5' },
-          { color: '#00E676', label: 'Low 1–3' },
-        ].map(({ color, label }) => (
-          <div key={label} className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-            <span className="text-2xs text-text-muted">{label}</span>
-          </div>
-        ))}
-      </div>
-
-      {events.length === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
-          <div className="text-4xl mb-3">🛰️</div>
-          <p className="text-sm text-text-muted">Ingesting live intelligence data…</p>
-          <p className="text-xs text-text-disabled mt-1">First run takes ~30 seconds</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Main component ──────────────────────────────────────────────────────────
 
 type Props = {
@@ -410,40 +306,15 @@ export function DashboardClient({ initialEvents }: Props) {
         </div>
 
         {/* Center — Map */}
-        <div className="flex-1 relative overflow-hidden">
-          {/* Map controls */}
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+        {/* overflow-visible so Leaflet popups/tooltips can extend beyond bounds */}
+        <div className="flex-1 relative">
+          {/* Layer control — sits above map via z-[1001] (above Leaflet's z-1000) */}
+          <div className="absolute top-3 left-3 z-[1001] flex items-center gap-2">
             <LayerControl
               layers={layers}
               onToggleLayer={handleToggleLayer}
               onToggleCategory={handleToggleCategory}
             />
-            <button
-              onClick={() => {}}
-              className="glass-panel rounded-lg flex items-center gap-2 px-3 py-2 text-text-muted hover:text-text-secondary transition-colors text-sm"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <span className="hidden sm:inline text-xs">CMD+K</span>
-            </button>
-          </div>
-
-          {/* Zoom controls */}
-          <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
-            {[
-              { label: '+', path: 'M12 6v6m0 0v6m0-6h6m-6 0H6' },
-              { label: '–', path: 'M20 12H4' },
-            ].map(({ label, path }) => (
-              <button key={label}
-                className="w-8 h-8 glass-panel rounded-lg flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={path} />
-                </svg>
-              </button>
-            ))}
           </div>
 
           <WorldMap events={events} />
