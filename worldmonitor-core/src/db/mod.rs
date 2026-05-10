@@ -3,7 +3,7 @@ use sqlx::{
     Pool, Sqlite,
 };
 use std::str::FromStr;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::models::{Alert, IntelEvent, User};
 
