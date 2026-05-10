@@ -6,11 +6,14 @@
  * Tiles:   CartoDB Dark Matter (free, no API key, OSM data)
  * Library: react-leaflet v5 + leaflet 1.9
  *
- * NOTE: This file is always loaded via next/dynamic with ssr:false because
- * Leaflet accesses `window` at import time and cannot run on the server.
+ * CSS is imported in app/layout.tsx (not here) because Next.js App Router
+ * cannot reliably bundle relative CSS imports from dynamic() chunks.
+ *
+ * NOTE: Always loaded via next/dynamic with ssr:false — Leaflet accesses
+ * `window` at import time and will crash during server rendering.
  */
 
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -19,41 +22,54 @@ import {
   ZoomControl,
   useMap,
 } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import './WorldMap.css';
 import type { IntelEvent } from '@/lib/api';
 
 // ─── Severity helpers ─────────────────────────────────────────────────────────
 
 const SEVERITY = [
-  { min: 8,  label: 'Critical', color: '#FF3E3E' },
-  { min: 6,  label: 'High',     color: '#FFB800' },
-  { min: 4,  label: 'Medium',   color: '#00F5FF' },
-  { min: 0,  label: 'Low',      color: '#00E676' },
+  { min: 8, label: 'Critical', color: '#FF3E3E' },
+  { min: 6, label: 'High',     color: '#FFB800' },
+  { min: 4, label: 'Medium',   color: '#00F5FF' },
+  { min: 0, label: 'Low',      color: '#00E676' },
 ] as const;
 
 function severityMeta(score: number) {
   return SEVERITY.find(s => score >= s.min) ?? SEVERITY[3];
 }
 
-// ─── Map re-centring on new data ──────────────────────────────────────────────
+// Safe replacements for Math.min/max spread — avoids call-stack overflow on
+// large event arrays (100+ items blows the argument limit in some engines).
+function arrayMin(arr: number[]) { return arr.reduce((a, b) => Math.min(a, b), Infinity); }
+function arrayMax(arr: number[]) { return arr.reduce((a, b) => Math.max(a, b), -Infinity); }
+
+// ─── MapUpdater — fits bounds after first event load ─────────────────────────
+// Must be a child of <MapContainer> to access the useMap() context.
+// Side effects (fitBounds) happen inside useEffect, never during render.
 
 function MapUpdater({ events }: { events: IntelEvent[] }) {
   const map = useMap();
   const fitted = useRef(false);
 
-  // Fly to the bounding box of events once on first non-empty load
-  if (!fitted.current && events.length > 0) {
+  useEffect(() => {
+    if (fitted.current || events.length === 0) return;
     fitted.current = true;
+
     const lats = events.map(e => e.lat);
     const lons = events.map(e => e.lon);
+
+    const south = arrayMin(lats) - 5;
+    const west  = arrayMin(lons) - 5;
+    const north = arrayMax(lats) + 5;
+    const east  = arrayMax(lons) + 5;
+
+    // Clamp to valid lat/lon ranges
     const bounds: [[number, number], [number, number]] = [
-      [Math.min(...lats) - 5, Math.min(...lons) - 5],
-      [Math.max(...lats) + 5, Math.max(...lons) + 5],
+      [Math.max(south, -85), Math.max(west, -180)],
+      [Math.min(north,  85), Math.min(east,  180)],
     ];
-    // Use a slight timeout so the map has fully rendered first
-    setTimeout(() => map.fitBounds(bounds, { maxZoom: 5, animate: true }), 200);
-  }
+
+    map.fitBounds(bounds, { maxZoom: 5, animate: true, duration: 0.8 });
+  }, [events, map]);
 
   return null;
 }
@@ -78,8 +94,7 @@ export function WorldMap({ events }: Props) {
           lon: e.lon,
           color: meta.color,
           label: meta.label,
-          // Radius scales with severity: 5 (low) → 14 (critical)
-          radius: 4 + e.severity * 0.9,
+          radius: 4 + e.severity * 0.9,   // 4.9 (low) → 13 (critical)
           severity: e.severity,
           country: e.country,
           headline: e.headline,
@@ -123,9 +138,8 @@ export function WorldMap({ events }: Props) {
         maxZoom={12}
         style={{ width: '100%', height: '100%' }}
         zoomControl={false}
-        worldCopyJump
       >
-        {/* CartoDB Dark Matter — free OSM-backed dark basemap, no API key */}
+        {/* CartoDB Dark Matter — free OSM-backed dark basemap */}
         <TileLayer
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
@@ -133,10 +147,10 @@ export function WorldMap({ events }: Props) {
           maxZoom={20}
         />
 
-        {/* Custom zoom controls — bottom-right, away from stats bar */}
+        {/* Zoom controls bottom-right, away from the stats bar */}
         <ZoomControl position="bottomright" />
 
-        {/* Fit map to event bounds on first load */}
+        {/* Fit map bounds to the event set on first load */}
         <MapUpdater events={events} />
 
         {/* Event markers */}
@@ -153,16 +167,13 @@ export function WorldMap({ events }: Props) {
               opacity: 1,
             }}
           >
-            <Popup maxWidth={280} className="wm-popup">
+            <Popup maxWidth={280}>
               <div className="wm-popup-inner">
-                {/* Header row */}
                 <div className="wm-popup-header" style={{ color: m.color }}>
                   <span className="wm-popup-sev">{m.label} {m.severity}/10</span>
                   <span className="wm-popup-country">{m.country}</span>
                 </div>
-                {/* Headline */}
                 <p className="wm-popup-headline">{m.headline}</p>
-                {/* Source badge */}
                 <div className="wm-popup-meta">
                   <span className="wm-popup-source">{m.source.toUpperCase()}</span>
                 </div>
