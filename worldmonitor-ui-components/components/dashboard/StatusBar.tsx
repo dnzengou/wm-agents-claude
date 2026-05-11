@@ -40,7 +40,7 @@ export function StatusBar({
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-neon to-info flex items-center justify-center">
             <span className="text-obsidian font-bold text-sm">W</span>
           </div>
-          <span className="text-sm font-bold text-text-primary tracking-wide">WorldMonitor</span>
+          <span className="text-sm font-bold text-text-primary tracking-wide">WorldMonitor Agents</span>
         </div>
 
         <div className="w-px h-4 bg-border-default" />

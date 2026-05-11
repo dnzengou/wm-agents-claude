@@ -17,9 +17,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'WorldMonitor | OSINT Intelligence Platform',
-  description: 'Real-time open source intelligence monitoring and analysis platform',
-  keywords: ['OSINT', 'intelligence', 'threat monitoring', 'security', 'geopolitics'],
+  title: 'WorldMonitor Agents | Multi-Domain Intelligence Platform',
+  description: 'Real-time multi-domain OSINT intelligence: geopolitical, cyber, energy, climate, nuclear, and more.',
+  keywords: ['OSINT', 'intelligence', 'threat monitoring', 'cyber', 'energy', 'climate', 'nuclear', 'geopolitics'],
 };
 
 export default function RootLayout({

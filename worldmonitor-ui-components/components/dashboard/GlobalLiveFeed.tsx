@@ -17,9 +17,26 @@ export interface LiveEvent {
   title: string;
   description: string;
   location?: string;
+  domain?: string;
   isNew?: boolean;
   isGated?: boolean;
 }
+
+// Domain display metadata
+const DOMAIN_META: Record<string, { emoji: string; label: string }> = {
+  geopolitical:  { emoji: '🌍', label: 'Geo' },
+  cyber:         { emoji: '⚡', label: 'Cyber' },
+  energy:        { emoji: '🛢️', label: 'Energy' },
+  climate:       { emoji: '🌡️', label: 'Climate' },
+  wildfire:      { emoji: '🔥', label: 'Wildfire' },
+  water:         { emoji: '💧', label: 'Water' },
+  natural:       { emoji: '🌋', label: 'Natural' },
+  nuclear:       { emoji: '☢️', label: 'Nuclear' },
+  mining:        { emoji: '⛏️', label: 'Mining' },
+  deforestation: { emoji: '🌳', label: 'Forest' },
+  ocean:         { emoji: '🌊', label: 'Ocean' },
+  demographics:  { emoji: '👥', label: 'Demo' },
+};
 
 export interface GlobalLiveFeedProps {
   events: LiveEvent[];
@@ -203,11 +220,17 @@ function EventItem({ event, onClick, onUpgrade, isEven }: EventItemProps) {
           </p>
 
           {/* Footer */}
-          <div className="flex items-center gap-3 mt-2">
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
             <Badge variant={severity.variant as any} className="text-2xs">
               {event.severity}
             </Badge>
-            
+
+            {event.domain && DOMAIN_META[event.domain] && (
+              <span className="text-2xs font-mono text-text-muted">
+                {DOMAIN_META[event.domain].emoji} {DOMAIN_META[event.domain].label}
+              </span>
+            )}
+
             {event.location && (
               <span className="flex items-center gap-1 text-2xs text-text-muted">
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">

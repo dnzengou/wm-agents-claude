@@ -50,11 +50,30 @@ function toLiveEvent(event: IntelEvent, index: number): LiveEvent {
     title: event.headline,
     description: event.headline,
     location: event.country,
+    domain: event.domain,
     isNew: index < 3,
     // Gate critical events behind the pro tier
     isGated: event.severity >= 8,
   };
 }
+
+// ─── Domain filter metadata ───────────────────────────────────────────────────
+
+const DOMAINS = [
+  { id: null,           label: 'All',       emoji: '🌐', color: '#00F5FF' },
+  { id: 'geopolitical', label: 'Geo',       emoji: '🌍', color: '#FFB800' },
+  { id: 'cyber',        label: 'Cyber',     emoji: '⚡', color: '#FF3E3E' },
+  { id: 'energy',       label: 'Energy',    emoji: '🛢️', color: '#FF6B35' },
+  { id: 'climate',      label: 'Climate',   emoji: '🌡️', color: '#00BCD4' },
+  { id: 'wildfire',     label: 'Wildfire',  emoji: '🔥', color: '#FF5722' },
+  { id: 'water',        label: 'Water',     emoji: '💧', color: '#2196F3' },
+  { id: 'natural',      label: 'Natural',   emoji: '🌋', color: '#9C27B0' },
+  { id: 'nuclear',      label: 'Nuclear',   emoji: '☢️', color: '#F44336' },
+  { id: 'mining',       label: 'Mining',    emoji: '⛏️', color: '#A1887F' },
+  { id: 'deforestation',label: 'Forest',    emoji: '🌳', color: '#43A047' },
+  { id: 'ocean',        label: 'Ocean',     emoji: '🌊', color: '#0288D1' },
+  { id: 'demographics', label: 'Demo',      emoji: '👥', color: '#607D8B' },
+] as const;
 
 /** Derive agents from event data + real brief state */
 function deriveAgents(
@@ -253,12 +272,19 @@ export function DashboardClient({ initialEvents }: Props) {
   }, [topCountry]); // eslint-disable-line react-hooks/exhaustive-deps
   // ──────────────────────────────────────────────────────────────────────────
 
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+
   const [layers, setLayers] = useState<Layer[]>(() => {
     const counts: Record<string, number> = { geopolitical: events.length };
     return DEFAULT_LAYERS.map(l => ({ ...l, count: counts[l.id] ?? l.count }));
   });
 
-  const liveEvents = useMemo(() => events.map(toLiveEvent), [events]);
+  const filteredEvents = useMemo(
+    () => selectedDomain ? events.filter(e => e.domain === selectedDomain) : events,
+    [events, selectedDomain],
+  );
+
+  const liveEvents = useMemo(() => filteredEvents.map(toLiveEvent), [filteredEvents]);
   const agents = useMemo(() => deriveAgents(events, brief, briefLoading), [events, brief, briefLoading]);
   const traceSteps = useMemo(() => deriveTrace(events, brief, briefLoading), [events, brief, briefLoading]);
 
@@ -279,7 +305,7 @@ export function DashboardClient({ initialEvents }: Props) {
     close, setSearchQuery, executeSelected,
   } = useCommandPalette(COMMANDS);
 
-  const alertCount = events.filter(e => e.severity >= 8).length;
+  const alertCount = filteredEvents.filter(e => e.severity >= 8).length;
 
   return (
     <div className="min-h-screen bg-obsidian flex flex-col">
@@ -317,7 +343,32 @@ export function DashboardClient({ initialEvents }: Props) {
             />
           </div>
 
-          <WorldMap events={events} />
+          {/* Domain filter pills */}
+          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-1.5 flex-wrap justify-center px-3 pointer-events-auto max-w-3xl">
+            {DOMAINS.map(d => {
+              const active = selectedDomain === d.id;
+              return (
+                <button
+                  key={String(d.id)}
+                  onClick={() => setSelectedDomain(active ? null : (d.id as string | null))}
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-2xs font-mono transition-all duration-150"
+                  style={{
+                    background: active ? d.color + '33' : 'rgba(10,14,20,0.75)',
+                    border: `1px solid ${active ? d.color : 'rgba(255,255,255,0.12)'}`,
+                    color: active ? d.color : 'rgba(255,255,255,0.55)',
+                  }}
+                >
+                  <span>{d.emoji}</span>
+                  <span>{d.label}</span>
+                  {selectedDomain === d.id && d.id !== null && (
+                    <span className="opacity-60">({filteredEvents.length})</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <WorldMap events={filteredEvents} />
         </div>
 
         {/* Right — Agents + Reasoning */}

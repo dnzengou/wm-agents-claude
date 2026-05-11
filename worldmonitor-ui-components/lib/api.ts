@@ -27,6 +27,9 @@ export type IntelEvent = {
   source: 'gdelt' | 'rss' | 'manual';
   /** Unix millis */
   timestamp: number;
+  /** Intelligence domain: geopolitical | cyber | energy | climate | wildfire |
+   *  water | natural | nuclear | mining | deforestation | ocean | demographics */
+  domain: string;
 };
 
 export type Brief = {

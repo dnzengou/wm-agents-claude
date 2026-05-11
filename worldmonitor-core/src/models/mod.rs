@@ -13,6 +13,9 @@ pub struct IntelEvent {
     pub source: String,
     pub timestamp: i64,
     pub created_at: Option<DateTime<Utc>>,
+    /// Intelligence domain: geopolitical | cyber | energy | climate | wildfire |
+    /// water | natural | nuclear | mining | deforestation | ocean | demographics
+    pub domain: String,
 }
 
 impl IntelEvent {
@@ -27,7 +30,14 @@ impl IntelEvent {
             source: source.to_string(),
             timestamp: Utc::now().timestamp_millis(),
             created_at: Some(Utc::now()),
+            domain: "geopolitical".to_string(),
         }
+    }
+
+    /// Builder: set intelligence domain.
+    pub fn with_domain(mut self, domain: &str) -> Self {
+        self.domain = domain.to_string();
+        self
     }
 
     /// Get grid key for deduplication (0.1 degree precision)
@@ -133,21 +143,6 @@ pub struct GdeltResponse {
     #[serde(rename = "type")]
     pub response_type: String,
     pub features: Vec<GdeltFeature>,
-}
-
-/// RSS item from feed
-#[derive(Debug, Clone, Deserialize)]
-pub struct RssItem {
-    pub title: String,
-    pub description: Option<String>,
-    pub pub_date: Option<String>,
-    pub link: Option<String>,
-}
-
-/// RSS feed response
-#[derive(Debug, Clone, Deserialize)]
-pub struct RssResponse {
-    pub items: Vec<RssItem>,
 }
 
 /// GeoJSON for map rendering
