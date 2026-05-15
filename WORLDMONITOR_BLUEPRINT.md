@@ -1,7 +1,7 @@
-# WorldMonitor — Innovation Upgrade Blueprint
-**Version:** v3 → v4 Lean
+# WorldMonitor Agents — Innovation Upgrade Blueprint
+**Version:** v4 → v5 Multi-Domain
 **Framework:** Innovation Upgrade Playbook v01
-**Date:** 2026-05-11
+**Date:** 2026-05-15
 **Status:** ✅ LIVE — both services deployed and verified
 
 ---
@@ -75,7 +75,7 @@ Next.js SSR pre-fetch → client hydration → 30s differential sync.
 
 ---
 
-## 2. As-Built Architecture (v4)
+## 2. As-Built Architecture (v5 — Multi-Domain)
 
 ```
 Mobile/Browser
@@ -94,8 +94,8 @@ Railway (Rust/Axum 0.7, Tokio)               wm-agents-claude-production.up.rail
   └── POST /api/alerts        → alert subscriptions (3 free max)
           ↓
   SQLite (Railway persistent volume /app/data/worldmonitor.db)
-  GDELT GeoJSON API  (polled every ~5 min by background task)
-  RSS feeds          (polled every ~5 min)
+  GDELT GeoJSON API  (polled every ~5 min; query: conflict|war|nuclear|cyber|disaster, 6h window)
+  RSS feeds          (19 feeds, 13 domains, concurrent via tokio::spawn, roxmltree parser)
   Groq LLaMA-3 API   (on-demand, cached aggressively)
 ```
 
@@ -193,6 +193,15 @@ wm-agents-claude/                        ← GitHub repo root
 
 **Total: ~42 files** (target was ≤ 40; within 5%)
 
+### v5 additions (domain expansion)
+- `worldmonitor-core/src/core/mod.rs` — full rewrite: 19 feeds, roxmltree, `classify_domain()`, `calculate_severity()` domain-aware, `domain_country_fallback()`
+- `worldmonitor-core/src/models/mod.rs` — `domain: String` field on `IntelEvent` + `with_domain()` builder
+- `worldmonitor-core/src/db/mod.rs` — `domain` column (CREATE TABLE + ALTER TABLE migration), all queries updated
+- `worldmonitor-ui-components/components/map/WorldMap.tsx` — CartoDB Dark Matter, severity `CircleMarker`s
+- `worldmonitor-ui-components/components/dashboard/DashboardClient.tsx` — `selectedDomain` filter state, domain pill bar (14 pills)
+- `worldmonitor-ui-components/components/dashboard/GlobalLiveFeed.tsx` — `domain?` on `LiveEvent`, emoji badge per event card
+- `worldmonitor-ui-components/components/dashboard/StatusBar.tsx` — renamed to "WorldMonitor Agents"
+
 ---
 
 ## 4. Key Engineering Decisions
@@ -263,10 +272,32 @@ The 5-step chain of thought is partially real:
 - **Output:** Geocoded `IntelEvent` rows inserted via `batch_insert_events()`
 - **Dedup:** `INSERT OR IGNORE` by event UUID; grid-key dedup at 0.1° resolution
 
-### AG02_RSS (RSS Scout)
-- **Trigger:** Same background loop as AG01
-- **Source:** Configured RSS feeds (BBC, Reuters, Al Jazeera geopolitics)
-- **Output:** Country-extracted `IntelEvent` rows (keyword matching → `CountryCoords::extract_from_text`)
+### AG02_RSS (Multi-Domain Scout)
+- **Trigger:** Same background loop as AG01 (all 19 feeds fetched concurrently via `tokio::spawn`)
+- **Parser:** `roxmltree` — direct RSS 2.0 + Atom XML, zero proxy dependency
+- **Feeds (19, as-built):**
+
+| Domain | Feed |
+|---|---|
+| geopolitical | BBC World, Al Jazeera |
+| cyber | The Hacker News, Krebs on Security |
+| energy | OilPrice, IEA |
+| climate | NASA Climate, Guardian Climate Crisis |
+| wildfire | InciWeb NWCG, Guardian Wildfires |
+| water | Circle of Blue |
+| natural | USGS Earthquakes (Atom), ReliefWeb Disasters |
+| nuclear | NTI |
+| mining | Mining.com |
+| deforestation | Mongabay |
+| ocean | Guardian Oceans |
+| demographics | UN Population News |
+| uninsurability | Insurance Journal |
+
+- **Domain tagging:** `classify_domain()` overrides feed default via keyword scan
+  (e.g. a BBC geopolitical item mentioning "ransomware" → tagged `cyber`)
+- **Geocoding fallback:** `domain_country_fallback()` assigns default country for feeds
+  that never name a country (InciWeb → United States, Insurance Journal → United States)
+- **Output:** Domain-tagged `IntelEvent` rows
 
 ### AG03_BRIEF (Analyst + Brief)
 - **Trigger:** Client-side, once per unique top-severity country per session
