@@ -36,7 +36,8 @@ const DOMAIN_META: Record<string, { emoji: string; label: string }> = {
   deforestation: { emoji: '🌳', label: 'Forest' },
   ocean:           { emoji: '🌊', label: 'Ocean' },
   demographics:    { emoji: '👥', label: 'Demo' },
-  uninsurability:  { emoji: '🏚️', label: 'Uninsur.' },
+  uninsurability:   { emoji: '🏚️', label: 'Uninsur.' },
+  critical_minerals:{ emoji: '⚗️', label: 'Minerals' },
 };
 
 export interface GlobalLiveFeedProps {

@@ -12,7 +12,7 @@ struct FeedConfig {
     domain: &'static str,
 }
 
-/// 19 authoritative, public RSS/Atom feeds across 13 intelligence domains.
+/// 26 authoritative, public RSS/Atom feeds across 14 intelligence domains.
 /// Direct XML fetch via roxmltree — no third-party proxy dependency.
 /// Each entry also carries an optional geocoding fallback country for feeds
 /// whose items never mention a country by name (e.g. InciWeb wildfires).
@@ -50,6 +50,18 @@ const FEEDS: &[FeedConfig] = &[
     FeedConfig { url: "https://news.un.org/feed/subscribe/en/news/topic/population/feed/rss.xml", domain: "demographics" },
     // ── Uninsurability / Climate-Financial Risk ───────────────────────────────
     FeedConfig { url: "https://www.insurancejournal.com/feed/",                   domain: "uninsurability" },
+    // ── Critical Minerals & Strategic Supply Chains ───────────────────────────
+    FeedConfig { url: "https://www.benchmarkminerals.com/feed/",                  domain: "critical_minerals" },
+    FeedConfig { url: "https://www.miningweekly.com/feed",                        domain: "critical_minerals" },
+    // ── Environmental / Climate Data ─────────────────────────────────────────
+    FeedConfig { url: "https://earthobservatory.nasa.gov/feeds/natural-hazards.rss", domain: "natural" },
+    FeedConfig { url: "https://www.carbonbrief.org/feed",                         domain: "climate" },
+    // ── Global Disaster Alerts (GDACS — WHO/UN endorsed) ─────────────────────
+    FeedConfig { url: "https://www.gdacs.org/xml/rss.xml",                        domain: "natural" },
+    // ── Nuclear (IAEA official feed) ─────────────────────────────────────────
+    FeedConfig { url: "https://www.iaea.org/newscenter/news/rss",                 domain: "nuclear" },
+    // ── Geopolitical (Deutsche Welle — EN) ───────────────────────────────────
+    FeedConfig { url: "https://rss.dw.com/xml/rss-en-world",                     domain: "geopolitical" },
 ];
 
 // ─── Domain keyword classifier ────────────────────────────────────────────────
@@ -93,8 +105,17 @@ fn classify_domain(text: &str, feed_domain: &'static str) -> &'static str {
     {
         return "water";
     }
-    if t.contains("lithium") || t.contains("cobalt") || t.contains("rare earth")
-        || t.contains("mine collapse") || t.contains("tailings")
+    if t.contains("rare earth") || t.contains("critical mineral") || t.contains("strategic mineral")
+        || t.contains("battery material") || t.contains("mineral supply chain")
+        || t.contains("lithium supply") || t.contains("cobalt supply")
+        || t.contains("graphite supply") || t.contains("ev metal")
+        || t.contains("nickel supply") || t.contains("tungsten")
+        || t.contains("semiconductor supply") || t.contains("chip shortage")
+    {
+        return "critical_minerals";
+    }
+    if t.contains("lithium") || t.contains("cobalt") || t.contains("mine collapse")
+        || t.contains("tailings") || t.contains("artisanal mining")
     {
         return "mining";
     }
@@ -114,10 +135,12 @@ fn classify_domain(text: &str, feed_domain: &'static str) -> &'static str {
     {
         return "demographics";
     }
-    if t.contains("uninsur") || t.contains("insurance loss") || t.contains("insured loss")
-        || t.contains("underinsur") || t.contains("climate risk premium")
-        || t.contains("catastrophe bond") || t.contains("reinsur")
-        || t.contains("coverage gap")
+    if t.contains("uninsurable") || t.contains("uninsurability")
+        || t.contains("climate risk premium") || t.contains("catastrophe bond")
+        || t.contains("cat bond") || t.contains("insured climate loss")
+        || t.contains("flood insurance") || t.contains("wildfire insurance")
+        || t.contains("coverage gap") || t.contains("parametric insurance")
+        || t.contains("reinsurance loss") || t.contains("natural catastrophe loss")
     {
         return "uninsurability";
     }
@@ -142,8 +165,9 @@ fn calculate_severity(text: &str, domain: &str) -> i32 {
         "deforestation"   => 3,
         "ocean"           => 3,
         "demographics"    => 3,
-        "uninsurability"  => 4,
-        _                 => 4, // geopolitical
+        "uninsurability"   => 4,
+        "critical_minerals"=> 5,
+        _                  => 4, // geopolitical
     };
 
     // Escalation signals — override upward only
@@ -403,11 +427,12 @@ impl IntelligenceFusion {
 // Some feeds (InciWeb wildfires, insurance journals) rarely name a country.
 // We assign a sensible default so their events still appear on the map.
 
+/// Domain-level geocoding fallback for feeds whose items rarely name a country.
+/// InciWeb wildfire incidents are US-only; other domains require explicit country mention.
 fn domain_country_fallback(feed_domain: &str) -> Option<&'static str> {
     match feed_domain {
-        "wildfire"       => Some("United States"), // InciWeb = US incidents only
-        "uninsurability" => Some("United States"), // Insurance Journal = US-centric
-        _                => None,
+        "wildfire" => Some("United States"),
+        _          => None,
     }
 }
 

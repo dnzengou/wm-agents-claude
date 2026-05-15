@@ -73,7 +73,8 @@ const DOMAINS = [
   { id: 'deforestation',label: 'Forest',    emoji: '🌳', color: '#43A047' },
   { id: 'ocean',          label: 'Ocean',    emoji: '🌊', color: '#0288D1' },
   { id: 'demographics',  label: 'Demo',     emoji: '👥', color: '#607D8B' },
-  { id: 'uninsurability',label: 'Uninsur.', emoji: '🏚️', color: '#FF8F00' },
+  { id: 'uninsurability',  label: 'Uninsur.',  emoji: '🏚️', color: '#FF8F00' },
+  { id: 'critical_minerals',label: 'Minerals', emoji: '⚗️', color: '#7C4DFF' },
 ] as const;
 
 /** Derive agents from event data + real brief state */
@@ -344,8 +345,8 @@ export function DashboardClient({ initialEvents }: Props) {
             />
           </div>
 
-          {/* Domain filter pills */}
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-1.5 flex-wrap justify-center px-3 pointer-events-auto max-w-3xl">
+          {/* Domain filter pills — sits between stats bar (top) and legend (bottom) */}
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-1 flex-wrap justify-center px-3 pointer-events-auto max-w-2xl">
             {DOMAINS.map(d => {
               const active = selectedDomain === d.id;
               return (
