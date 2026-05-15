@@ -71,8 +71,9 @@ const DOMAINS = [
   { id: 'nuclear',      label: 'Nuclear',   emoji: '☢️', color: '#F44336' },
   { id: 'mining',       label: 'Mining',    emoji: '⛏️', color: '#A1887F' },
   { id: 'deforestation',label: 'Forest',    emoji: '🌳', color: '#43A047' },
-  { id: 'ocean',        label: 'Ocean',     emoji: '🌊', color: '#0288D1' },
-  { id: 'demographics', label: 'Demo',      emoji: '👥', color: '#607D8B' },
+  { id: 'ocean',          label: 'Ocean',    emoji: '🌊', color: '#0288D1' },
+  { id: 'demographics',  label: 'Demo',     emoji: '👥', color: '#607D8B' },
+  { id: 'uninsurability',label: 'Uninsur.', emoji: '🏚️', color: '#FF8F00' },
 ] as const;
 
 /** Derive agents from event data + real brief state */

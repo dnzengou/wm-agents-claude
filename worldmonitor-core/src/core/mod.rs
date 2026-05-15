@@ -12,8 +12,10 @@ struct FeedConfig {
     domain: &'static str,
 }
 
-/// 15 authoritative, public RSS/Atom feeds across 12 intelligence domains.
+/// 19 authoritative, public RSS/Atom feeds across 13 intelligence domains.
 /// Direct XML fetch via roxmltree — no third-party proxy dependency.
+/// Each entry also carries an optional geocoding fallback country for feeds
+/// whose items never mention a country by name (e.g. InciWeb wildfires).
 const FEEDS: &[FeedConfig] = &[
     // ── Geopolitical ──────────────────────────────────────────────────────────
     FeedConfig { url: "https://feeds.bbci.co.uk/news/world/rss.xml",              domain: "geopolitical" },
@@ -28,7 +30,9 @@ const FEEDS: &[FeedConfig] = &[
     FeedConfig { url: "https://climate.nasa.gov/news/rss.xml",                    domain: "climate" },
     FeedConfig { url: "https://www.theguardian.com/environment/climate-crisis/rss", domain: "climate" },
     // ── Wildfire ─────────────────────────────────────────────────────────────
+    // InciWeb incidents are US-only; events rarely name the country explicitly
     FeedConfig { url: "https://inciweb.nwcg.gov/feeds/rss/incidents/",            domain: "wildfire" },
+    FeedConfig { url: "https://www.theguardian.com/environment/wildfires/rss",    domain: "wildfire" },
     // ── Water Systems ────────────────────────────────────────────────────────
     FeedConfig { url: "https://www.circleofblue.org/feed/",                       domain: "water" },
     // ── Natural Hazards ───────────────────────────────────────────────────────
@@ -40,6 +44,12 @@ const FEEDS: &[FeedConfig] = &[
     FeedConfig { url: "https://www.mining.com/feed/",                             domain: "mining" },
     // ── Deforestation + Carbon MRV ───────────────────────────────────────────
     FeedConfig { url: "https://news.mongabay.com/feed/",                          domain: "deforestation" },
+    // ── Ocean & Maritime ─────────────────────────────────────────────────────
+    FeedConfig { url: "https://www.theguardian.com/environment/oceans/rss",       domain: "ocean" },
+    // ── Demographics / Labor / Housing ───────────────────────────────────────
+    FeedConfig { url: "https://news.un.org/feed/subscribe/en/news/topic/population/feed/rss.xml", domain: "demographics" },
+    // ── Uninsurability / Climate-Financial Risk ───────────────────────────────
+    FeedConfig { url: "https://www.insurancejournal.com/feed/",                   domain: "uninsurability" },
 ];
 
 // ─── Domain keyword classifier ────────────────────────────────────────────────
@@ -104,6 +114,13 @@ fn classify_domain(text: &str, feed_domain: &'static str) -> &'static str {
     {
         return "demographics";
     }
+    if t.contains("uninsur") || t.contains("insurance loss") || t.contains("insured loss")
+        || t.contains("underinsur") || t.contains("climate risk premium")
+        || t.contains("catastrophe bond") || t.contains("reinsur")
+        || t.contains("coverage gap")
+    {
+        return "uninsurability";
+    }
     feed_domain
 }
 
@@ -122,10 +139,11 @@ fn calculate_severity(text: &str, domain: &str) -> i32 {
         "climate"       => 4,
         "natural"       => 5,
         "mining"        => 3,
-        "deforestation" => 3,
-        "ocean"         => 3,
-        "demographics"  => 3,
-        _               => 4, // geopolitical
+        "deforestation"   => 3,
+        "ocean"           => 3,
+        "demographics"    => 3,
+        "uninsurability"  => 4,
+        _                 => 4, // geopolitical
     };
 
     // Escalation signals — override upward only
@@ -381,6 +399,18 @@ impl IntelligenceFusion {
     }
 }
 
+// ─── Domain → geocoding fallback ─────────────────────────────────────────────
+// Some feeds (InciWeb wildfires, insurance journals) rarely name a country.
+// We assign a sensible default so their events still appear on the map.
+
+fn domain_country_fallback(feed_domain: &str) -> Option<&'static str> {
+    match feed_domain {
+        "wildfire"       => Some("United States"), // InciWeb = US incidents only
+        "uninsurability" => Some("United States"), // Insurance Journal = US-centric
+        _                => None,
+    }
+}
+
 // ─── Single-feed fetcher ──────────────────────────────────────────────────────
 
 async fn fetch_single_feed(
@@ -394,15 +424,20 @@ async fn fetch_single_feed(
     }
     let xml = response.text().await?;
     let parsed = parse_rss_xml(&xml);
+    let fallback = domain_country_fallback(feed_domain);
 
     let mut events = Vec::new();
     for (title, desc) in parsed {
         let text = format!("{} {}", title, desc);
         let domain = classify_domain(&text, feed_domain);
-        let countries = CountryCoords::extract_from_text(&text);
 
-        // Only emit geocodable events (map requires lat/lon)
-        if let Some(country) = countries.into_iter().next() {
+        // Prefer country extracted from text; fall back to domain default
+        let country_opt = CountryCoords::extract_from_text(&text)
+            .into_iter()
+            .next()
+            .or_else(|| fallback.map(|s| s.to_string()));
+
+        if let Some(country) = country_opt {
             if let Some((lat, lon)) = CountryCoords::get(&country) {
                 let severity = calculate_severity(&text, domain);
                 events.push(
