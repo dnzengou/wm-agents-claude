@@ -43,20 +43,23 @@ impl Database {
                 source TEXT CHECK(source IN ('gdelt', 'rss', 'manual')),
                 timestamp INTEGER NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                domain TEXT NOT NULL DEFAULT 'geopolitical'
+                domain TEXT NOT NULL DEFAULT 'geopolitical',
+                link TEXT
             )
             "#,
         )
         .execute(&self.pool)
         .await?;
 
-        // ALTER TABLE migration for existing DBs that pre-date the domain column.
-        // SQLite does not support ADD COLUMN IF NOT EXISTS, so we ignore the error.
+        // Safe migrations for existing DBs — ignore errors when columns already exist.
         let _ = sqlx::query(
             "ALTER TABLE events ADD COLUMN domain TEXT NOT NULL DEFAULT 'geopolitical'",
         )
         .execute(&self.pool)
         .await;
+        let _ = sqlx::query("ALTER TABLE events ADD COLUMN link TEXT")
+            .execute(&self.pool)
+            .await;
 
         // Create indexes for events
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)")
@@ -143,8 +146,8 @@ impl Database {
     pub async fn upsert_event(&self, event: &IntelEvent) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-            INSERT OR REPLACE INTO events (id, country, lat, lon, severity, headline, source, timestamp, domain)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO events (id, country, lat, lon, severity, headline, source, timestamp, domain, link)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&event.id)
@@ -156,6 +159,7 @@ impl Database {
         .bind(&event.source)
         .bind(event.timestamp)
         .bind(&event.domain)
+        .bind(event.link.as_deref())
         .execute(&self.pool)
         .await?;
 
@@ -174,8 +178,8 @@ impl Database {
         for event in events {
             sqlx::query(
                 r#"
-                INSERT OR IGNORE INTO events (id, country, lat, lon, severity, headline, source, timestamp, domain)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO events (id, country, lat, lon, severity, headline, source, timestamp, domain, link)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&event.id)
@@ -187,6 +191,7 @@ impl Database {
             .bind(&event.source)
             .bind(event.timestamp)
             .bind(&event.domain)
+            .bind(event.link.as_deref())
             .execute(&mut *tx)
             .await?;
             count += 1;
@@ -200,7 +205,7 @@ impl Database {
     pub async fn get_recent_events(&self, limit: i32) -> anyhow::Result<Vec<IntelEvent>> {
         let events = sqlx::query_as::<_, IntelEvent>(
             r#"
-            SELECT id, country, lat, lon, severity, headline, source, timestamp, created_at, domain
+            SELECT id, country, lat, lon, severity, headline, source, timestamp, created_at, domain, link
             FROM events
             WHERE timestamp > strftime('%s', 'now', '-24 hours') * 1000
             ORDER BY severity DESC, timestamp DESC
@@ -218,7 +223,7 @@ impl Database {
     pub async fn get_events_by_country(&self, country: &str) -> anyhow::Result<Vec<IntelEvent>> {
         let events = sqlx::query_as::<_, IntelEvent>(
             r#"
-            SELECT id, country, lat, lon, severity, headline, source, timestamp, created_at, domain
+            SELECT id, country, lat, lon, severity, headline, source, timestamp, created_at, domain, link
             FROM events
             WHERE country = ? AND timestamp > strftime('%s', 'now', '-24 hours') * 1000
             ORDER BY severity DESC, timestamp DESC
@@ -236,7 +241,7 @@ impl Database {
     pub async fn get_events_since(&self, since: i64) -> anyhow::Result<Vec<IntelEvent>> {
         let events = sqlx::query_as::<_, IntelEvent>(
             r#"
-            SELECT id, country, lat, lon, severity, headline, source, timestamp, created_at, domain
+            SELECT id, country, lat, lon, severity, headline, source, timestamp, created_at, domain, link
             FROM events
             WHERE timestamp > ?
             ORDER BY timestamp DESC

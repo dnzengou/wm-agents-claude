@@ -51,6 +51,7 @@ function toLiveEvent(event: IntelEvent, index: number): LiveEvent {
     description: event.headline,
     location: event.country,
     domain: event.domain,
+    link: event.link,
     isNew: index < 3,
     // Gate critical events behind the pro tier
     isGated: event.severity >= 8,

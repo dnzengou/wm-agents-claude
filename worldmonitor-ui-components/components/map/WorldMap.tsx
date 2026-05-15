@@ -99,6 +99,8 @@ export function WorldMap({ events }: Props) {
           country: e.country,
           headline: e.headline,
           source: e.source,
+          domain: e.domain,
+          link: e.link,
         };
       }),
     [events],
@@ -167,15 +169,44 @@ export function WorldMap({ events }: Props) {
               opacity: 1,
             }}
           >
-            <Popup maxWidth={280}>
+            <Popup maxWidth={300}>
               <div className="wm-popup-inner">
+                {/* Severity + country row */}
                 <div className="wm-popup-header" style={{ color: m.color }}>
-                  <span className="wm-popup-sev">{m.label} {m.severity}/10</span>
+                  <span className="wm-popup-sev">{m.label} · {m.severity}/10</span>
                   <span className="wm-popup-country">{m.country}</span>
                 </div>
-                <p className="wm-popup-headline">{m.headline}</p>
+
+                {/* Headline — clickable if source link exists */}
+                {m.link ? (
+                  <a
+                    href={m.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="wm-popup-headline wm-popup-headline-link"
+                  >
+                    {m.headline}
+                  </a>
+                ) : (
+                  <p className="wm-popup-headline">{m.headline}</p>
+                )}
+
+                {/* Meta row: source tag + optional "Read source →" */}
                 <div className="wm-popup-meta">
                   <span className="wm-popup-source">{m.source.toUpperCase()}</span>
+                  {m.domain && (
+                    <span className="wm-popup-domain">{m.domain}</span>
+                  )}
+                  {m.link && (
+                    <a
+                      href={m.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="wm-popup-link"
+                    >
+                      Read source ↗
+                    </a>
+                  )}
                 </div>
               </div>
             </Popup>

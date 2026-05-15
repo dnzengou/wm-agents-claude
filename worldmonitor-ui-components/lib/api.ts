@@ -28,8 +28,11 @@ export type IntelEvent = {
   /** Unix millis */
   timestamp: number;
   /** Intelligence domain: geopolitical | cyber | energy | climate | wildfire |
-   *  water | natural | nuclear | mining | deforestation | ocean | demographics */
+   *  water | natural | nuclear | mining | deforestation | ocean | demographics |
+   *  uninsurability | critical_minerals */
   domain: string;
+  /** Original article URL (RSS feeds only; undefined for GDELT events). */
+  link?: string;
 };
 
 export type Brief = {

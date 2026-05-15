@@ -14,8 +14,11 @@ pub struct IntelEvent {
     pub timestamp: i64,
     pub created_at: Option<DateTime<Utc>>,
     /// Intelligence domain: geopolitical | cyber | energy | climate | wildfire |
-    /// water | natural | nuclear | mining | deforestation | ocean | demographics
+    /// water | natural | nuclear | mining | deforestation | ocean | demographics |
+    /// uninsurability | critical_minerals
     pub domain: String,
+    /// Original article URL (RSS feeds only; None for GDELT events).
+    pub link: Option<String>,
 }
 
 impl IntelEvent {
@@ -31,12 +34,19 @@ impl IntelEvent {
             timestamp: Utc::now().timestamp_millis(),
             created_at: Some(Utc::now()),
             domain: "geopolitical".to_string(),
+            link: None,
         }
     }
 
     /// Builder: set intelligence domain.
     pub fn with_domain(mut self, domain: &str) -> Self {
         self.domain = domain.to_string();
+        self
+    }
+
+    /// Builder: set source article URL.
+    pub fn with_link(mut self, link: Option<String>) -> Self {
+        self.link = link;
         self
     }
 

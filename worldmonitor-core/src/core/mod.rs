@@ -196,8 +196,9 @@ fn calculate_severity(text: &str, domain: &str) -> i32 {
 // ─── RSS / Atom XML parser ────────────────────────────────────────────────────
 
 /// Parse RSS 2.0 (`<item>`) or Atom (`<entry>`) XML.
-/// Returns (title, description) pairs — at most 10 per feed.
-fn parse_rss_xml(xml: &str) -> Vec<(String, String)> {
+/// Returns `(title, description, link)` triples — at most 10 per feed.
+/// Handles both RSS 2.0 `<link>` text content and Atom `<link href="…"/>` attributes.
+fn parse_rss_xml(xml: &str) -> Vec<(String, String, Option<String>)> {
     let doc = match roxmltree::Document::parse(xml) {
         Ok(d) => d,
         Err(e) => {
@@ -212,6 +213,7 @@ fn parse_rss_xml(xml: &str) -> Vec<(String, String)> {
         if tag != "item" && tag != "entry" {
             continue;
         }
+
         let title = node
             .children()
             .find(|n| n.tag_name().name() == "title")
@@ -228,8 +230,28 @@ fn parse_rss_xml(xml: &str) -> Vec<(String, String)> {
             .trim()
             .to_string();
 
+        // RSS 2.0: <link>https://…</link>  (text node)
+        // Atom:    <link href="https://…" rel="alternate"/>  (attribute)
+        let link = node.children()
+            .find(|n| n.tag_name().name() == "link")
+            .and_then(|n| {
+                // Text content first (RSS 2.0)
+                n.text()
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| t.starts_with("http"))
+                    // Fall back to href attribute (Atom)
+                    .or_else(|| n.attribute("href").map(|h| h.to_string()))
+            })
+            // Also check <link> with rel="alternate" for Atom
+            .or_else(|| {
+                node.children()
+                    .find(|n| n.tag_name().name() == "link"
+                        && n.attribute("rel").map(|r| r == "alternate").unwrap_or(true))
+                    .and_then(|n| n.attribute("href").map(|h| h.to_string()))
+            });
+
         if !title.is_empty() {
-            items.push((title, desc));
+            items.push((title, desc, link));
         }
         if items.len() >= 10 {
             break;
@@ -452,7 +474,7 @@ async fn fetch_single_feed(
     let fallback = domain_country_fallback(feed_domain);
 
     let mut events = Vec::new();
-    for (title, desc) in parsed {
+    for (title, desc, link) in parsed {
         let text = format!("{} {}", title, desc);
         let domain = classify_domain(&text, feed_domain);
 
@@ -467,7 +489,8 @@ async fn fetch_single_feed(
                 let severity = calculate_severity(&text, domain);
                 events.push(
                     IntelEvent::new(&country, lat, lon, severity, &title, "rss")
-                        .with_domain(domain),
+                        .with_domain(domain)
+                        .with_link(link),
                 );
             }
         }

@@ -18,6 +18,8 @@ export interface LiveEvent {
   description: string;
   location?: string;
   domain?: string;
+  /** Original article URL — shown as a source link in the event card */
+  link?: string;
   isNew?: boolean;
   isGated?: boolean;
 }
@@ -222,7 +224,7 @@ function EventItem({ event, onClick, onUpgrade, isEven }: EventItemProps) {
           </p>
 
           {/* Footer */}
-          <div className="flex items-center gap-3 mt-2 flex-wrap">
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
             <Badge variant={severity.variant as any} className="text-2xs">
               {event.severity}
             </Badge>
@@ -241,6 +243,21 @@ function EventItem({ event, onClick, onUpgrade, isEven }: EventItemProps) {
                 </svg>
                 {event.location}
               </span>
+            )}
+
+            {event.link && (
+              <a
+                href={event.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="ml-auto flex items-center gap-1 text-2xs font-mono text-neon/70 hover:text-neon transition-colors"
+              >
+                Source
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
             )}
           </div>
         </div>

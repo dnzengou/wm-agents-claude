@@ -76,6 +76,97 @@
   color: #64748b !important;
 }
 
+/* ── Popup inner layout ───────────────────────────────────────────────────── */
+.wm-popup-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wm-popup-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wm-popup-country {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.wm-popup-headline {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #e2e8f0;
+  line-height: 1.4;
+  margin: 0;
+  font-family: inherit;
+}
+
+.wm-popup-headline-link {
+  display: block;
+  color: #e2e8f0;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.wm-popup-headline-link:hover {
+  color: #00f5ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wm-popup-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wm-popup-source {
+  font-size: 9px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #475569;
+  background: rgba(255,255,255,0.06);
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+.wm-popup-domain {
+  font-size: 9px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.wm-popup-link {
+  margin-left: auto;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 600;
+  color: #00f5ff;
+  text-decoration: none;
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+.wm-popup-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* ── Marker pulse animation ───────────────────────────────────────────────── */
 @keyframes wm-pulse {
   0%   { opacity: 0.8; transform: scale(1); }
