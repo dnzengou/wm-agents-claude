@@ -24,7 +24,7 @@ export type IntelEvent = {
   /** 1–10 severity score */
   severity: number;
   headline: string;
-  source: 'gdelt' | 'rss' | 'manual';
+  source: 'gdelt' | 'rss' | 'manual' | 'eonet';
   /** Unix millis */
   timestamp: number;
   /** Intelligence domain: geopolitical | cyber | energy | climate | wildfire |

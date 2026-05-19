@@ -4,6 +4,34 @@ use tracing::{debug, info, warn};
 
 use crate::models::{CountryCoords, GdeltResponse, IntelEvent};
 
+// ─── NASA EONET response structs ─────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct EonetResponse {
+    events: Vec<EonetEvent>,
+}
+
+#[derive(serde::Deserialize)]
+struct EonetEvent {
+    title: String,
+    link: Option<String>,
+    categories: Vec<EonetCategory>,
+    geometry: Vec<EonetGeometry>,
+}
+
+#[derive(serde::Deserialize)]
+struct EonetCategory {
+    id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct EonetGeometry {
+    #[serde(rename = "type")]
+    geo_type: String,
+    /// [lon, lat] for Point; nested arrays for Polygon
+    coordinates: serde_json::Value,
+}
+
 // ─── Feed configuration ───────────────────────────────────────────────────────
 
 struct FeedConfig {
@@ -62,6 +90,18 @@ const FEEDS: &[FeedConfig] = &[
     FeedConfig { url: "https://www.iaea.org/newscenter/news/rss",                 domain: "nuclear" },
     // ── Geopolitical (Deutsche Welle — EN) ───────────────────────────────────
     FeedConfig { url: "https://rss.dw.com/xml/rss-en-world",                     domain: "geopolitical" },
+    // ── East Africa — Igihe (Rwanda, Kinyarwanda/FR) ─────────────────────────
+    FeedConfig { url: "https://igihe.com/feed/",                                 domain: "geopolitical" },
+    // ── East Africa — Daily Nation (Kenya) ───────────────────────────────────
+    FeedConfig { url: "https://nation.africa/rss.xml",                           domain: "geopolitical" },
+    // ── West Africa — Punch Nigeria ───────────────────────────────────────────
+    FeedConfig { url: "https://punchng.com/feed/",                               domain: "geopolitical" },
+    // ── South Asia — Dawn Pakistan ────────────────────────────────────────────
+    FeedConfig { url: "https://www.dawn.com/feeds/home",                         domain: "geopolitical" },
+    // ── Climate — NOAA Climate.gov ────────────────────────────────────────────
+    FeedConfig { url: "https://www.climate.gov/news-features/rss.xml",           domain: "climate" },
+    // ── Climate — Carbon Brief ───────────────────────────────────────────────
+    FeedConfig { url: "https://www.carbonbrief.org/feed",                        domain: "climate" },
 ];
 
 // ─── Domain keyword classifier ────────────────────────────────────────────────
@@ -281,6 +321,15 @@ impl IntelligenceFusion {
             Err(e) => warn!("GDELT fetch failed: {}", e),
         }
 
+        // NASA EONET — Earth observation events with exact coordinates
+        match Self::fetch_eonet().await {
+            Ok(events) => {
+                debug!("EONET: {} earth-observation events", events.len());
+                for e in events { Self::merge_event(&mut grid, e); }
+            }
+            Err(e) => warn!("EONET fetch failed: {}", e),
+        }
+
         // Domain RSS feeds (concurrent)
         match Self::fetch_rss().await {
             Ok(events) => {
@@ -366,6 +415,89 @@ impl IntelligenceFusion {
             events.push(
                 IntelEvent::new(&country, lat, lon, severity, &headline, "gdelt")
                     .with_domain(domain),
+            );
+        }
+
+        Ok(events)
+    }
+
+    // ── NASA EONET — Earth Observation Natural Events ─────────────────────────
+
+    /// Map EONET category IDs to our internal domain strings.
+    fn eonet_domain(category_id: &str) -> &'static str {
+        match category_id {
+            "wildfires"     => "wildfire",
+            "volcanoes"     => "natural",
+            "earthquakes"   => "natural",
+            "landslides"    => "natural",
+            "seaLakeIce"    => "natural",
+            "severeStorms"  => "climate",
+            "floods"        => "climate",
+            "drought"       => "climate",
+            "snow"          => "climate",
+            "dustHaze"      => "climate",
+            "tempExtremes"  => "climate",
+            "waterColor"    => "ocean",
+            "manMade"       => "geopolitical",
+            _               => "natural",
+        }
+    }
+
+    async fn fetch_eonet() -> anyhow::Result<Vec<IntelEvent>> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .user_agent("WorldMonitor-Agents/3.0 (OSINT; +https://worldmonitor.app)")
+            .build()?;
+
+        let url = "https://eonet.gsfc.nasa.gov/api/v3/events?days=7&status=open&limit=60";
+        let response = client.get(url).send().await?;
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("EONET status: {}", response.status()));
+        }
+
+        let data: EonetResponse = response.json().await?;
+        let mut events = Vec::new();
+
+        for ev in data.events {
+            // Use the most-recent geometry point
+            let geom = match ev.geometry.last() {
+                Some(g) => g,
+                None => continue,
+            };
+            if geom.geo_type != "Point" {
+                continue;
+            }
+
+            let coords = match (
+                geom.coordinates.get(0).and_then(|v| v.as_f64()),
+                geom.coordinates.get(1).and_then(|v| v.as_f64()),
+            ) {
+                (Some(lon), Some(lat)) => (lat, lon),
+                _ => continue,
+            };
+
+            let (lat, lon) = coords;
+            if lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0 {
+                continue;
+            }
+
+            let domain = ev.categories.first()
+                .map(|c| Self::eonet_domain(&c.id))
+                .unwrap_or("natural");
+
+            // Try to extract country from the event title; fall back to "Unknown".
+            // EONET often includes region names like "Wildfire - Big Basin, California".
+            let country = CountryCoords::extract_from_text(&ev.title)
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            let severity = calculate_severity(&ev.title, domain);
+
+            events.push(
+                IntelEvent::new(&country, lat, lon, severity, &ev.title, "eonet")
+                    .with_domain(domain)
+                    .with_link(ev.link),
             );
         }
 

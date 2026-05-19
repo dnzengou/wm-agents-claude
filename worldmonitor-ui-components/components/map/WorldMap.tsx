@@ -4,7 +4,7 @@
  * WorldMap — OpenStreetMap-backed intelligence overlay.
  *
  * Tiles:   CartoDB Dark Matter (free, no API key, OSM data)
- * Library: react-leaflet v5 + leaflet 1.9
+ * Library: react-leaflet v4.2.1 + leaflet 1.9
  *
  * CSS is imported in app/layout.tsx (not here) because Next.js App Router
  * cannot reliably bundle relative CSS imports from dynamic() chunks.
@@ -42,10 +42,20 @@ function severityMeta(score: number) {
 function arrayMin(arr: number[]) { return arr.reduce((a, b) => Math.min(a, b), Infinity); }
 function arrayMax(arr: number[]) { return arr.reduce((a, b) => Math.max(a, b), -Infinity); }
 
-// ─── MapUpdater — fits bounds after first event load ─────────────────────────
-// Must be a child of <MapContainer> to access the useMap() context.
-// Side effects (fitBounds) happen inside useEffect, never during render.
+// ─── MapResizer — invalidates Leaflet's size on mount ────────────────────────
+// Fixes the "grey tiles / shifted map" bug that occurs when Leaflet mounts
+// inside a flex container before CSS layout is complete.
+function MapResizer() {
+  const map = useMap();
+  useEffect(() => {
+    // Let the browser finish one paint cycle, then correct Leaflet's size.
+    const id = setTimeout(() => map.invalidateSize({ animate: false }), 80);
+    return () => clearTimeout(id);
+  }, [map]);
+  return null;
+}
 
+// ─── MapUpdater — fits bounds after first event load ─────────────────────────
 function MapUpdater({ events }: { events: IntelEvent[] }) {
   const map = useMap();
   const fitted = useRef(false);
@@ -62,7 +72,6 @@ function MapUpdater({ events }: { events: IntelEvent[] }) {
     const north = arrayMax(lats) + 5;
     const east  = arrayMax(lons) + 5;
 
-    // Clamp to valid lat/lon ranges
     const bounds: [[number, number], [number, number]] = [
       [Math.max(south, -85), Math.max(west, -180)],
       [Math.min(north,  85), Math.min(east,  180)],
@@ -74,13 +83,37 @@ function MapUpdater({ events }: { events: IntelEvent[] }) {
   return null;
 }
 
+// ─── MapFlyTo — flies to an event when selectedEventId changes ───────────────
+function MapFlyTo({
+  events,
+  selectedEventId,
+}: {
+  events: IntelEvent[];
+  selectedEventId: string | null;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!selectedEventId) return;
+    const target = events.find(e => e.id === selectedEventId);
+    if (!target) return;
+    map.flyTo([target.lat, target.lon], Math.max(map.getZoom(), 5), {
+      animate: true,
+      duration: 1.0,
+    });
+  }, [selectedEventId, events, map]);
+
+  return null;
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 type Props = {
   events: IntelEvent[];
+  selectedEventId?: string | null;
 };
 
-export function WorldMap({ events }: Props) {
+export function WorldMap({ events, selectedEventId = null }: Props) {
   const critCount = useMemo(() => events.filter(e => e.severity >= 8).length, [events]);
   const highCount = useMemo(() => events.filter(e => e.severity >= 6 && e.severity < 8).length, [events]);
 
@@ -94,16 +127,17 @@ export function WorldMap({ events }: Props) {
           lon: e.lon,
           color: meta.color,
           label: meta.label,
-          radius: 4 + e.severity * 0.9,   // 4.9 (low) → 13 (critical)
+          radius: 4 + e.severity * 0.9,
           severity: e.severity,
           country: e.country,
           headline: e.headline,
           source: e.source,
           domain: e.domain,
           link: e.link,
+          isSelected: e.id === selectedEventId,
         };
       }),
-    [events],
+    [events, selectedEventId],
   );
 
   return (
@@ -149,23 +183,29 @@ export function WorldMap({ events }: Props) {
           maxZoom={20}
         />
 
-        {/* Zoom controls bottom-right, away from the stats bar */}
+        {/* Zoom controls bottom-right */}
         <ZoomControl position="bottomright" />
+
+        {/* Fix map shift caused by flex-layout race */}
+        <MapResizer />
 
         {/* Fit map bounds to the event set on first load */}
         <MapUpdater events={events} />
+
+        {/* Fly to selected event */}
+        <MapFlyTo events={events} selectedEventId={selectedEventId} />
 
         {/* Event markers */}
         {markers.map(m => (
           <CircleMarker
             key={m.id}
             center={[m.lat, m.lon]}
-            radius={m.radius}
+            radius={m.isSelected ? m.radius * 1.6 : m.radius}
             pathOptions={{
               color: m.color,
               fillColor: m.color,
-              fillOpacity: 0.75,
-              weight: 1.5,
+              fillOpacity: m.isSelected ? 0.95 : 0.75,
+              weight: m.isSelected ? 2.5 : 1.5,
               opacity: 1,
             }}
           >

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import '@/styles/globals.css';
 // Leaflet CSS must be imported at layout level so it's available when the
@@ -6,20 +6,45 @@ import '@/styles/globals.css';
 import 'leaflet/dist/leaflet.css';
 import '@/components/map/WorldMap.css';
 
-const inter = Inter({ 
+const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
+  display: 'swap',
 });
 
-const jetbrainsMono = JetBrains_Mono({ 
+const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-jetbrains-mono',
+  display: 'swap',
 });
+
+export const viewport: Viewport = {
+  themeColor: '#080d16',
+  width: 'device-width',
+  initialScale: 1,
+  minimumScale: 1,
+};
 
 export const metadata: Metadata = {
   title: 'WorldMonitor Agents | Multi-Domain Intelligence Platform',
   description: 'Real-time multi-domain OSINT intelligence: geopolitical, cyber, energy, climate, nuclear, and more.',
   keywords: ['OSINT', 'intelligence', 'threat monitoring', 'cyber', 'energy', 'climate', 'nuclear', 'geopolitics'],
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    title: 'WorldMonitor',
+    statusBarStyle: 'black-translucent',
+  },
+  icons: {
+    icon: '/icons/icon.svg',
+    apple: '/icons/icon.svg',
+  },
+  openGraph: {
+    type: 'website',
+    title: 'WorldMonitor Agents',
+    description: 'Real-time multi-domain OSINT intelligence platform.',
+    siteName: 'WorldMonitor Agents',
+  },
 };
 
 export default function RootLayout({
@@ -29,8 +54,24 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="mobile-web-app-capable" content="yes" />
+      </head>
       <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans`}>
         {children}
+        {/* PWA service worker registration */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js').catch(() => {});
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );
