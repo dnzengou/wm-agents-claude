@@ -1,7 +1,7 @@
-# WorldMonitor Agents — System Blueprint v7
+# WorldMonitor Agents — System Blueprint v8
 
 > **Last updated:** 2026-05-19  
-> **Git commit:** `852956d` — feat: UX polish, PWA, NL search, EONET, card-fly-to, sign-on  
+> **Git commit:** `a25c75c` — fix: revert MapContainer to width/height 100% — restore Leaflet tile rendering  
 > **Repository:** https://github.com/dnzengou/wm-agents-claude  
 
 This document is the single authoritative reference for the entire WorldMonitor Agents platform. It supersedes all previous blueprint/deliverable files (`WORLDMONITOR_DELIVERABLES.md`, `WORLDMONITOR_FIXES.md`, `WORLDMONITOR_ENHANCED_UI.md`, `PROJECT_SUMMARY.md`).
@@ -392,21 +392,53 @@ type UserSession = {
 | File | Purpose |
 |---|---|
 | `public/manifest.json` | App metadata, icons, theme colors, display mode |
-| `public/sw.js` | Service worker — network-first for pages/API, cache-first for static assets |
-| `public/icons/icon.svg` | SVG icon (192×192 equivalent) |
+| `public/sw.js` | Service worker (`wm-v2`) — network-first pages/API, cache-first assets |
+| `public/icons/icon.svg` | SVG fallback icon |
+| `public/icons/icon-192.png` | PNG icon 192×192 — Android install minimum, apple-touch-icon |
+| `public/icons/icon-512.png` | PNG icon 512×512 — Android splash / adaptive |
+| `public/icons/icon-512-maskable.png` | PNG 512×512 maskable — content within 80% safe zone |
+| `generate-icons.js` | Pure Node.js (no deps) icon generator — crosshair/globe design, #080d16 bg, #00f5ff accent |
 
-### Cache strategy (sw.js)
+### Icon manifest entries
+
+```json
+"icons": [
+  { "src": "/icons/icon-192.png",          "sizes": "192x192", "type": "image/png", "purpose": "any" },
+  { "src": "/icons/icon-512.png",          "sizes": "512x512", "type": "image/png", "purpose": "any" },
+  { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+  { "src": "/icons/icon.svg",              "sizes": "any",     "type": "image/svg+xml", "purpose": "any" }
+]
+```
+
+The maskable icon scales the crosshair design to 80% of the icon area so Android adaptive icons (squircle/circle crop) never clip content.
+
+### HTML head entries (layout.tsx `metadata.icons`)
+
+```ts
+icons: {
+  icon: [
+    { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    { url: '/icons/icon.svg', type: 'image/svg+xml' },
+  ],
+  apple: [{ url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+}
+```
+
+iOS reads `apple-touch-icon` from the HTML head — it ignores manifest icons and silently rejects SVG.
+
+### Cache strategy (sw.js — wm-v2)
 
 - **API calls** (`/api/*`) and cross-origin: pass-through (no cache)
-- **Static assets** (`.js`, `.css`, `.woff2`, `.png`, `.svg`, `.ico`): cache-first, fill cache on miss
+- **Static assets** (`.js`, `.css`, `.woff2`, `.png`, `.svg`, `.ico`): cache-first, fill on miss
 - **HTML pages**: network-first, fall back to cache
+- **Pre-cached on install:** `/`, `/manifest.json`, `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/icon-512-maskable.png`
 
-### Next steps for full PWA
+Bumping `CACHE` to `wm-v2` forces existing users to evict the old cache on next service-worker activation.
 
-1. Generate proper PNG icons: `public/icons/icon-192.png` + `public/icons/icon-512.png`  
-   *(SVG icon works in Chrome/Firefox; iOS Safari requires PNG)*
-2. Update `manifest.json` to reference PNG icons
-3. Add `metadataBase` to `layout.tsx` to resolve OG image warnings
+### metadataBase
+
+Set to `https://worldmonitor-core.vercel.app` in `layout.tsx` — resolves the Next.js OG image URL warning that appeared in every build.
 
 ### Registration
 
@@ -417,6 +449,14 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
 }
+```
+
+### Regenerating icons
+
+```bash
+cd worldmonitor-ui-components
+node generate-icons.js
+# → public/icons/icon-192.png, icon-512.png, icon-512-maskable.png
 ```
 
 ---
@@ -431,10 +471,18 @@ if ('serviceWorker' in navigator) {
 
 | Component | Purpose |
 |---|---|
-| `MapResizer` | Calls `map.invalidateSize()` after 80ms — fixes grey-tile / shifted-map bug on flex layout mount |
+| `MapResizer` | `ResizeObserver` on `map.getContainer()` — calls `map.invalidateSize()` on every real layout change (flex reflows, panel collapses). Fires once immediately on mount too. Replaces the old 80 ms `setTimeout` guess. |
 | `MapUpdater` | On first event load: `fitBounds()` to event extent ±5° with `maxZoom:5`. Fires once (ref guard). |
 | `MapFlyTo` | Watches `selectedEventId`; calls `map.flyTo()` to matching event |
 | `CircleMarker` | Radius: `4 + severity * 0.9` (4.9–13px). Selected: ×1.6. Colors: Critical=#FF3E3E, High=#FFB800, Medium=#00F5FF, Low=#00E676 |
+
+### Positioning invariant ⚠
+
+**`MapContainer` must keep `style={{ width: '100%', height: '100%' }}`** — do NOT change this to `position: absolute`.
+
+Leaflet relies on `.leaflet-container` being `position: relative` (set in `leaflet.css`). Its tile pane, overlay pane, and marker pane are all absolutely positioned *relative to that container*. Overriding `position` via inline style collapses the containing block, making tiles and all markers invisible.
+
+The surrounding `<div className="absolute inset-0">` wrapper provides reliable height regardless of the flex ancestor chain. `MapContainer` fills it via `width/height: 100%`; Leaflet's `position: relative` is left intact.
 
 ### CSS
 
