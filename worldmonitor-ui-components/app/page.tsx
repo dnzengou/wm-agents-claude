@@ -10,6 +10,7 @@ import type { Metadata } from 'next';
 import { DashboardClient } from '@/components/dashboard/DashboardClient';
 import { AuthGate } from '@/components/auth/AuthGate';
 import { api } from '@/lib/api';
+import { SEED_EVENTS } from '@/lib/seed-events';
 
 export const metadata: Metadata = {
   title: 'WorldMonitor | Live Intelligence Dashboard',
@@ -21,7 +22,9 @@ export const metadata: Metadata = {
 export const revalidate = 60;
 
 export default async function DashboardPage() {
-  const initialEvents = await api.intelligence.getLatest().catch(() => []);
+  const live = await api.intelligence.getLatest().catch(() => []);
+  // Use seed events when Railway backend is unreachable or returns no data.
+  const initialEvents = live.length > 0 ? live : SEED_EVENTS;
 
   return (
     <AuthGate>
