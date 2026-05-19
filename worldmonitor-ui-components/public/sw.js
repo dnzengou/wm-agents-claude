@@ -1,10 +1,13 @@
 // WorldMonitor Agents — Service Worker
 // Strategy: Network-first for API/pages, Cache-first for static assets.
 
-const CACHE = 'wm-v1';
+const CACHE = 'wm-v2';
 const STATIC = [
   '/',
   '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-512-maskable.png',
 ];
 
 // ── Install: pre-cache shell ──────────────────────────────────────────────────
