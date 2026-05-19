@@ -26,6 +26,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://worldmonitor-core.vercel.app'),
   title: 'WorldMonitor Agents | Multi-Domain Intelligence Platform',
   description: 'Real-time multi-domain OSINT intelligence: geopolitical, cyber, energy, climate, nuclear, and more.',
   keywords: ['OSINT', 'intelligence', 'threat monitoring', 'cyber', 'energy', 'climate', 'nuclear', 'geopolitics'],
