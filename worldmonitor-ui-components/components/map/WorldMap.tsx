@@ -42,15 +42,17 @@ function severityMeta(score: number) {
 function arrayMin(arr: number[]) { return arr.reduce((a, b) => Math.min(a, b), Infinity); }
 function arrayMax(arr: number[]) { return arr.reduce((a, b) => Math.max(a, b), -Infinity); }
 
-// ─── MapResizer — invalidates Leaflet's size on mount ────────────────────────
-// Fixes the "grey tiles / shifted map" bug that occurs when Leaflet mounts
-// inside a flex container before CSS layout is complete.
+// ─── MapResizer — invalidates Leaflet's size whenever the container resizes ──
+// ResizeObserver fires on actual layout changes, so it catches flex-container
+// reflows, panel collapses, and lazy CSS that setTimeout would miss.
 function MapResizer() {
   const map = useMap();
   useEffect(() => {
-    // Let the browser finish one paint cycle, then correct Leaflet's size.
-    const id = setTimeout(() => map.invalidateSize({ animate: false }), 80);
-    return () => clearTimeout(id);
+    const container = map.getContainer();
+    map.invalidateSize({ animate: false });
+    const ro = new ResizeObserver(() => map.invalidateSize({ animate: false }));
+    ro.observe(container);
+    return () => ro.disconnect();
   }, [map]);
   return null;
 }
@@ -141,7 +143,7 @@ export function WorldMap({ events, selectedEventId = null }: Props) {
   );
 
   return (
-    <div className="w-full h-full relative">
+    <div className="absolute inset-0">
 
       {/* ── Stats bar (floats above map) ─────────────────────────────────── */}
       <div
@@ -172,7 +174,7 @@ export function WorldMap({ events, selectedEventId = null }: Props) {
         zoom={2}
         minZoom={2}
         maxZoom={12}
-        style={{ width: '100%', height: '100%' }}
+        style={{ position: 'absolute', inset: 0 }}
         zoomControl={false}
       >
         {/* CartoDB Dark Matter — free OSM-backed dark basemap */}

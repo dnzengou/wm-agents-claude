@@ -352,15 +352,15 @@ export function DashboardClient({ initialEvents }: Props) {
             />
           </div>
 
-          {/* Domain filter pills */}
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-1 flex-wrap justify-center px-3 pointer-events-auto max-w-2xl">
+          {/* Domain filter pills — single scrollable row, never wraps over the map */}
+          <div className="absolute bottom-14 left-0 right-0 z-[1001] flex items-center gap-1 overflow-x-auto no-scrollbar px-3 pointer-events-auto">
             {DOMAINS.map(d => {
               const active = selectedDomain === d.id;
               return (
                 <button
                   key={String(d.id)}
                   onClick={() => setSelectedDomain(active ? null : (d.id as string | null))}
-                  className="flex items-center gap-1 px-2 py-1 rounded-full text-2xs font-mono transition-all duration-150"
+                  className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-2xs font-mono transition-all duration-150"
                   style={{
                     background: active ? d.color + '33' : 'rgba(10,14,20,0.75)',
                     border: `1px solid ${active ? d.color : 'rgba(255,255,255,0.12)'}`,

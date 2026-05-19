@@ -1,5 +1,7 @@
 /* ── Leaflet container ─────────────────────────────────────────────────────── */
 .leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
   background: #080d16;
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
 }
