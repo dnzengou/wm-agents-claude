@@ -1,8 +1,8 @@
 # WorldMonitor Agents — Innovation Upgrade Blueprint
-**Version:** v4 → v5 Multi-Domain
+**Version:** v9 — Resilient Data Pipeline + Seed Fallback
 **Framework:** Innovation Upgrade Playbook v01
-**Date:** 2026-05-15
-**Status:** ✅ LIVE — both services deployed and verified
+**Date:** 2026-05-20
+**Status:** ✅ LIVE — frontend operational with seed data fallback; Railway backend inactive
 
 ---
 
@@ -11,18 +11,31 @@
 | Service | URL | Status |
 |---|---|---|
 | **Frontend** (Vercel) | https://worldmonitor-core.vercel.app | ✅ Ready |
-| **Backend API** (Railway) | https://wm-agents-claude-production.up.railway.app | ✅ Healthy |
+| **Backend API** (Railway) | https://wm-agents-claude-production.up.railway.app | ⚠️ Inactive (404) |
 | **GitHub** | https://github.com/dnzengou/wm-agents-claude | ✅ main |
 
 ### Verified endpoints
 ```
-GET  /health          → {"status":"ok","version":"0.2.0","timestamp":...}
-GET  /api/intelligence → live events array (severity-ranked, 24h window)
-POST /api/brief        → AI brief with dual-cache (DashMap L1 + SQLite L2 + Groq L3)
-GET  /api/geo          → GeoJSON FeatureCollection for map overlay
-GET  /api/sync?since=N → differential event sync (incremental updates)
-POST /api/user         → user profile get/create/update
-POST /api/alerts       → country alert subscriptions (3 free, unlimited pro)
+GET  /api/intelligence → 30 seed events (14 domains) — responds in < 100ms
+                         X-Source: seed-data  (Railway fallback active)
+                         X-Source: railway-backend  (when Railway is healthy)
+POST /api/brief        → proxied to Railway (may fail while backend is inactive)
+GET  /api/geo          → proxied to Railway
+GET  /api/sync?since=N → proxied to Railway (silent failure in useIntelligence hook)
+POST /api/user         → proxied to Railway
+POST /api/alerts       → proxied to Railway
+```
+
+### Railway backend restoration
+
+To restore live GDELT/RSS data:
+```bash
+# Trigger Railway redeploy via CLI (if installed)
+railway up --service worldmonitor-core
+
+# After restoration, update URL if it changed:
+echo "https://new-url.up.railway.app" | vercel env add RUST_BACKEND_URL production
+vercel --prod
 ```
 
 ---
@@ -72,6 +85,7 @@ Next.js SSR pre-fetch → client hydration → 30s differential sync.
 | 8 | Rust 1.77 too old for `getrandom 0.4` | Base image `rust:1.86-slim-bookworm` |
 | 9 | Three separate API fetches on load | Single pre-fetch in server component, 30s differential sync |
 | 10 | `@rust_backend_url` secret not created | Removed from `vercel.json`; set via `vercel env add` |
+| 11 | Railway backend inactive (404) — map shows no events | Added `app/api/intelligence/route.ts` handler: proxies Railway (8s timeout), falls back to 30-event seed dataset covering all 14 domains; `app/page.tsx` SSR also uses seeds on empty response |
 
 ---
 
@@ -81,10 +95,13 @@ Next.js SSR pre-fetch → client hydration → 30s differential sync.
 Mobile/Browser
      ↓ HTTPS
 Vercel Edge (Next.js 14 App Router)          worldmonitor-core.vercel.app
-  ├── app/page.tsx          → SSR: pre-fetches /api/intelligence on server
+  ├── app/page.tsx          → SSR: pre-fetches Railway; falls back to SEED_EVENTS
+  ├── app/api/intelligence/ → Route handler (takes precedence over rewrite):
+  │     route.ts              1. Try Railway with 8s timeout
+  │                           2. Fallback: lib/seed-events.ts (30 events, 14 domains)
   ├── DashboardClient.tsx   → client island: 30s poll + CoT brief fetch
-  └── /api/* rewrite        → proxies to Railway (RUST_BACKEND_URL env)
-          ↓
+  └── /api/* rewrite        → proxies remaining routes to Railway (RUST_BACKEND_URL)
+          ↓ (when healthy)
 Railway (Rust/Axum 0.7, Tokio)               wm-agents-claude-production.up.railway.app
   ├── GET  /api/intelligence  → SQLite events (24h, severity DESC)
   ├── POST /api/brief         → L1 DashMap (1h) → L2 SQLite (24h) → L3 Groq
@@ -156,7 +173,10 @@ wm-agents-claude/                        ← GitHub repo root
 │   ├── app/
 │   │   ├── layout.tsx
 │   │   ├── loading.tsx
-│   │   ├── page.tsx                     ← SSR server component, pre-fetches events
+│   │   ├── page.tsx                     ← SSR server component; seeds fallback when Railway down
+│   │   ├── api/
+│   │   │   └── intelligence/
+│   │   │       └── route.ts             ← Route handler: proxy Railway → seed fallback (v9)
 │   │   └── onboarding/page.tsx
 │   ├── components/
 │   │   ├── dashboard/
@@ -185,6 +205,7 @@ wm-agents-claude/                        ← GitHub repo root
 │   │   └── useDebounce.ts
 │   └── lib/
 │       ├── api.ts                       ← Type-safe API client (all 6 endpoints)
+│       ├── seed-events.ts               ← 30 curated IntelEvents across 14 domains (v9)
 │       ├── user.ts                      ← getUserPrefs, saveUserPrefs, getUserId
 │       └── utils.ts                     ← cn() helper
 │
@@ -192,6 +213,12 @@ wm-agents-claude/                        ← GitHub repo root
 ```
 
 **Total: ~42 files** (target was ≤ 40; within 5%)
+
+### v9 additions (resilient data pipeline)
+- `worldmonitor-ui-components/lib/seed-events.ts` — 30 curated IntelEvents spanning all 14 domains; geographically distributed across 20 countries; severity 5–9
+- `worldmonitor-ui-components/app/api/intelligence/route.ts` — Next.js App Router route handler at `/api/intelligence`; takes precedence over `next.config.js` rewrite; tries Railway (8s timeout), returns seed data on any failure or empty response; `X-Source` header reveals data origin
+- `worldmonitor-ui-components/app/page.tsx` — SSR server component now uses `SEED_EVENTS` when Railway returns empty array (catches Railway-down and cold-start scenarios)
+- **Root cause diagnosed:** Railway service `wm-agents-claude-production` returned HTTP 404 "Application not found" — deployment became inactive. All API calls were silently rewritten to a dead host; frontend showed empty map.
 
 ### v5 additions (domain expansion)
 - `worldmonitor-core/src/core/mod.rs` — full rewrite: 19 feeds, roxmltree, `classify_domain()`, `calculate_severity()` domain-aware, `domain_country_fallback()`
