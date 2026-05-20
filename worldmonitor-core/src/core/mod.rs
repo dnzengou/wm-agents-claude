@@ -40,7 +40,7 @@ struct FeedConfig {
     domain: &'static str,
 }
 
-/// 34 authoritative, public RSS/Atom feeds across 14 intelligence domains.
+/// 33 authoritative, public RSS/Atom feeds across 14 intelligence domains.
 /// Includes HackerNews and YC Blog for early-warning tech/cyber signals.
 /// Direct XML fetch via roxmltree — no third-party proxy dependency.
 /// Each entry also carries an optional geocoding fallback country for feeds
@@ -101,8 +101,6 @@ const FEEDS: &[FeedConfig] = &[
     FeedConfig { url: "https://www.dawn.com/feeds/home",                         domain: "geopolitical" },
     // ── Climate — NOAA Climate.gov ────────────────────────────────────────────
     FeedConfig { url: "https://www.climate.gov/news-features/rss.xml",           domain: "climate" },
-    // ── Climate — Carbon Brief ───────────────────────────────────────────────
-    FeedConfig { url: "https://www.carbonbrief.org/feed",                        domain: "climate" },
     // ── Tech / Systemic Risk — HackerNews Top Stories ────────────────────────
     // HN surfaces zero-days, supply-chain attacks, AI governance, energy tech
     // before mainstream press; domain classifier maps to cyber/geopolitical.
