@@ -1,8 +1,8 @@
 # WorldMonitor Agents — Innovation Upgrade Blueprint
-**Version:** v9 — Resilient Data Pipeline + Seed Fallback
+**Version:** v10 — UX Onboarding, Tooltips, HN/YC Feeds, Resilient Pipeline
 **Framework:** Innovation Upgrade Playbook v01
 **Date:** 2026-05-20
-**Status:** ✅ LIVE — frontend operational with seed data fallback; Railway backend inactive
+**Status:** ✅ LIVE — Railway healthy (100 live events); seed fallback active if Railway goes down
 
 ---
 
@@ -11,7 +11,7 @@
 | Service | URL | Status |
 |---|---|---|
 | **Frontend** (Vercel) | https://worldmonitor-core.vercel.app | ✅ Ready |
-| **Backend API** (Railway) | https://wm-agents-claude-production.up.railway.app | ⚠️ Inactive (404) |
+| **Backend API** (Railway) | https://wm-agents-claude-production.up.railway.app | ✅ Healthy (v0.2.0) |
 | **GitHub** | https://github.com/dnzengou/wm-agents-claude | ✅ main |
 
 ### Verified endpoints
@@ -213,6 +213,14 @@ wm-agents-claude/                        ← GitHub repo root
 ```
 
 **Total: ~42 files** (target was ≤ 40; within 5%)
+
+### v10 additions (UX onboarding + feed enrichment)
+- `worldmonitor-ui-components/components/ui/WelcomeTour.tsx` — 4-step first-run modal overlay (localStorage-gated `wm_tour_v1_done`); covers live feed, geospatial map, agent network, and keyboard shortcuts; auto-dismissed on close or "Get Started"
+- `worldmonitor-ui-components/components/ui/Tooltip.tsx` — CSS-only tooltip, zero JS, 4 sides (top/bottom/left/right); wired to all 15 domain filter pills with topic descriptions
+- `worldmonitor-ui-components/components/auth/LoginPage.tsx` — full rewrite: split hero/card layout, 4-feature capability grid, live pulse indicator, access tier comparison table; native `title` tooltip on social buttons
+- `worldmonitor-ui-components/lib/seed-events.ts` — +8 HackerNews/YC themed events (cyber zero-days, AI governance, energy tech); now 38 total seed events
+- `worldmonitor-core/src/core/mod.rs` — HackerNews RSS (`news.ycombinator.com/rss`) and YC Blog RSS (`ycombinator.com/blog/rss`) added as feeds #33/#34; backend now ingests early-warning tech/cyber signals
+- Railway backend self-recovered during deployment; v10 proxy handler transparently elevated from seed → live backend (`X-Source: railway-backend`, 100 events)
 
 ### v9 additions (resilient data pipeline)
 - `worldmonitor-ui-components/lib/seed-events.ts` — 30 curated IntelEvents spanning all 14 domains; geographically distributed across 20 countries; severity 5–9
