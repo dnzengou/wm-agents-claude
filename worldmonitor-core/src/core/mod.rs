@@ -40,7 +40,8 @@ struct FeedConfig {
     domain: &'static str,
 }
 
-/// 26 authoritative, public RSS/Atom feeds across 14 intelligence domains.
+/// 34 authoritative, public RSS/Atom feeds across 14 intelligence domains.
+/// Includes HackerNews and YC Blog for early-warning tech/cyber signals.
 /// Direct XML fetch via roxmltree — no third-party proxy dependency.
 /// Each entry also carries an optional geocoding fallback country for feeds
 /// whose items never mention a country by name (e.g. InciWeb wildfires).
@@ -102,6 +103,13 @@ const FEEDS: &[FeedConfig] = &[
     FeedConfig { url: "https://www.climate.gov/news-features/rss.xml",           domain: "climate" },
     // ── Climate — Carbon Brief ───────────────────────────────────────────────
     FeedConfig { url: "https://www.carbonbrief.org/feed",                        domain: "climate" },
+    // ── Tech / Systemic Risk — HackerNews Top Stories ────────────────────────
+    // HN surfaces zero-days, supply-chain attacks, AI governance, energy tech
+    // before mainstream press; domain classifier maps to cyber/geopolitical.
+    FeedConfig { url: "https://news.ycombinator.com/rss",                        domain: "cyber" },
+    // ── Tech / Startups — YC Blog ─────────────────────────────────────────────
+    // YC essays on dual-use tech, AI safety, climate tech, defense startups.
+    FeedConfig { url: "https://www.ycombinator.com/blog/rss",                    domain: "cyber" },
 ];
 
 // ─── Domain keyword classifier ────────────────────────────────────────────────

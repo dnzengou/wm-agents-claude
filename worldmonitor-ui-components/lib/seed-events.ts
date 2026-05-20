@@ -55,4 +55,14 @@ export const SEED_EVENTS: IntelEvent[] = [
 
   // ── Uninsurability ────────────────────────────────────────────────────────
   { id: 's-unins-01', country: 'United States', lat: 25.77, lon: -80.19, severity: 6, headline: 'State Farm exits Florida homeowner market — 1.2M properties now effectively uninsurable', source: 'rss', domain: 'uninsurability', timestamp: NOW() - 36_000_000 },
+
+  // ── HackerNews / YC — technology & systemic risk ──────────────────────────
+  { id: 's-hn-01', country: 'United States', lat: 37.77, lon: -122.41, severity: 7, headline: 'HN: Critical zero-day in widely-used open-source SSH library actively exploited in the wild', source: 'rss', domain: 'cyber', timestamp: NOW() - 1_200_000, link: 'https://news.ycombinator.com' },
+  { id: 's-hn-02', country: 'China', lat: 39.90, lon: 116.40, severity: 8, headline: 'HN: Chinese researchers demonstrate chip-level side-channel attack bypassing all existing mitigations', source: 'rss', domain: 'cyber', timestamp: NOW() - 4_200_000, link: 'https://news.ycombinator.com' },
+  { id: 's-hn-03', country: 'United States', lat: 37.39, lon: -122.08, severity: 6, headline: 'YC Blog: AI model weight exfiltration — new threat vector as frontier labs scale compute clusters', source: 'rss', domain: 'cyber', timestamp: NOW() - 8_400_000, link: 'https://www.ycombinator.com/blog' },
+  { id: 's-hn-04', country: 'Germany', lat: 51.16, lon: 10.45, severity: 5, headline: 'HN: EU AI Act enforcement begins — first audits target high-risk biometric and critical infrastructure systems', source: 'rss', domain: 'geopolitical', timestamp: NOW() - 15_000_000, link: 'https://news.ycombinator.com' },
+  { id: 's-hn-05', country: 'United States', lat: 40.71, lon: -74.00, severity: 7, headline: 'HN: Algorithmic trading cascade triggers flash crash across 12 major indices simultaneously', source: 'rss', domain: 'energy', timestamp: NOW() - 20_000_000, link: 'https://news.ycombinator.com' },
+  { id: 's-hn-06', country: 'Israel', lat: 32.08, lon: 34.78, severity: 6, headline: 'YC Blog: Startup raises $80M for grid-scale iron-air batteries after European energy crisis accelerates demand', source: 'rss', domain: 'energy', timestamp: NOW() - 26_000_000, link: 'https://www.ycombinator.com/blog' },
+  { id: 's-hn-07', country: 'United Kingdom', lat: 51.50, lon: -0.12, severity: 7, headline: 'HN: GCHQ warns UK critical national infrastructure facing unprecedented AI-augmented spear-phishing campaign', source: 'rss', domain: 'cyber', timestamp: NOW() - 31_000_000, link: 'https://news.ycombinator.com' },
+  { id: 's-hn-08', country: 'India', lat: 12.97, lon: 77.59, severity: 5, headline: 'HN: Open-source satellite imagery analysis reveals unreported industrial construction near disputed border zone', source: 'rss', domain: 'geopolitical', timestamp: NOW() - 40_000_000, link: 'https://news.ycombinator.com' },
 ];

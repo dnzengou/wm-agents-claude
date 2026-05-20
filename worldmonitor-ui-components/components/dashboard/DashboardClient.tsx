@@ -13,6 +13,8 @@ import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useIntelligence } from '@/hooks/useIntelligence';
 import { api, Brief, IntelEvent, scoredToLabel } from '@/lib/api';
 import { getUserPrefs } from '@/lib/user';
+import { Tooltip } from '@/components/ui/Tooltip';
+import { WelcomeTour } from '@/components/ui/WelcomeTour';
 import type { Command } from '@/types';
 
 // Leaflet uses window at import time — must be loaded client-side only
@@ -60,21 +62,21 @@ function toLiveEvent(event: IntelEvent, index: number): LiveEvent {
 // ─── Domain filter metadata ───────────────────────────────────────────────────
 
 const DOMAINS = [
-  { id: null,              label: 'All',      emoji: '🌐', color: '#00F5FF' },
-  { id: 'geopolitical',    label: 'Geo',      emoji: '🌍', color: '#FFB800' },
-  { id: 'cyber',           label: 'Cyber',    emoji: '⚡', color: '#FF3E3E' },
-  { id: 'energy',          label: 'Energy',   emoji: '🛢️', color: '#FF6B35' },
-  { id: 'climate',         label: 'Climate',  emoji: '🌡️', color: '#00BCD4' },
-  { id: 'wildfire',        label: 'Wildfire', emoji: '🔥', color: '#FF5722' },
-  { id: 'water',           label: 'Water',    emoji: '💧', color: '#2196F3' },
-  { id: 'natural',         label: 'Natural',  emoji: '🌋', color: '#9C27B0' },
-  { id: 'nuclear',         label: 'Nuclear',  emoji: '☢️', color: '#F44336' },
-  { id: 'mining',          label: 'Mining',   emoji: '⛏️', color: '#A1887F' },
-  { id: 'deforestation',   label: 'Forest',   emoji: '🌳', color: '#43A047' },
-  { id: 'ocean',           label: 'Ocean',    emoji: '🌊', color: '#0288D1' },
-  { id: 'demographics',    label: 'Demo',     emoji: '👥', color: '#607D8B' },
-  { id: 'uninsurability',  label: 'Uninsur.', emoji: '🏚️', color: '#FF8F00' },
-  { id: 'critical_minerals', label: 'Minerals', emoji: '⚗️', color: '#7C4DFF' },
+  { id: null,              label: 'All',      emoji: '🌐', color: '#00F5FF', tip: 'Show all domains' },
+  { id: 'geopolitical',    label: 'Geo',      emoji: '🌍', color: '#FFB800', tip: 'Conflicts, diplomacy, regime changes' },
+  { id: 'cyber',           label: 'Cyber',    emoji: '⚡', color: '#FF3E3E', tip: 'APT attacks, ransomware, infrastructure breaches' },
+  { id: 'energy',          label: 'Energy',   emoji: '🛢️', color: '#FF6B35', tip: 'Oil, gas, grid disruptions, OPEC moves' },
+  { id: 'climate',         label: 'Climate',  emoji: '🌡️', color: '#00BCD4', tip: 'Extreme weather, drought, sea level events' },
+  { id: 'wildfire',        label: 'Wildfire', emoji: '🔥', color: '#FF5722', tip: 'Active fire perimeters from NASA EONET' },
+  { id: 'water',           label: 'Water',    emoji: '💧', color: '#2196F3', tip: 'Transboundary water disputes, droughts' },
+  { id: 'natural',         label: 'Natural',  emoji: '🌋', color: '#9C27B0', tip: 'Earthquakes, volcanic eruptions, tsunamis' },
+  { id: 'nuclear',         label: 'Nuclear',  emoji: '☢️', color: '#F44336', tip: 'Plant safety, proliferation, enrichment' },
+  { id: 'mining',          label: 'Mining',   emoji: '⛏️', color: '#A1887F', tip: 'Mining incidents, supply disruptions' },
+  { id: 'deforestation',   label: 'Forest',   emoji: '🌳', color: '#43A047', tip: 'Illegal logging, forest cover loss' },
+  { id: 'ocean',           label: 'Ocean',    emoji: '🌊', color: '#0288D1', tip: 'Maritime security, piracy, sea-lane disputes' },
+  { id: 'demographics',    label: 'Demo',     emoji: '👥', color: '#607D8B', tip: 'Migration, displacement, demographic shifts' },
+  { id: 'uninsurability',  label: 'Uninsur.', emoji: '🏚️', color: '#FF8F00', tip: 'Climate-driven insurance market collapse' },
+  { id: 'critical_minerals', label: 'Minerals', emoji: '⚗️', color: '#7C4DFF', tip: 'Cobalt, lithium, rare earth supply chains' },
 ] as const;
 
 /** Normalise a search string for NL matching */
@@ -277,6 +279,9 @@ export function DashboardClient({ initialEvents }: Props) {
 
   return (
     <div className="min-h-screen bg-obsidian flex flex-col overflow-hidden">
+      {/* First-run welcome tour — renders only once, localStorage-gated */}
+      <WelcomeTour />
+
       {/* Status bar */}
       <StatusBar
         version="2.7.0"
@@ -309,6 +314,7 @@ export function DashboardClient({ initialEvents }: Props) {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search events, countries, domains…"
+                title="Filter by keyword, country name, or domain (e.g. 'cyber', 'Ukraine', 'energy')"
                 className="w-full bg-surface border border-border-subtle rounded-md pl-8 pr-8 py-1.5 text-xs text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-neon/50 transition-colors font-mono"
               />
               {searchQuery && (
@@ -357,22 +363,23 @@ export function DashboardClient({ initialEvents }: Props) {
             {DOMAINS.map(d => {
               const active = selectedDomain === d.id;
               return (
-                <button
-                  key={String(d.id)}
-                  onClick={() => setSelectedDomain(active ? null : (d.id as string | null))}
-                  className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-2xs font-mono transition-all duration-150"
-                  style={{
-                    background: active ? d.color + '33' : 'rgba(10,14,20,0.75)',
-                    border: `1px solid ${active ? d.color : 'rgba(255,255,255,0.12)'}`,
-                    color: active ? d.color : 'rgba(255,255,255,0.55)',
-                  }}
-                >
-                  <span>{d.emoji}</span>
-                  <span>{d.label}</span>
-                  {selectedDomain === d.id && d.id !== null && (
-                    <span className="opacity-60">({filteredEvents.length})</span>
-                  )}
-                </button>
+                <Tooltip key={String(d.id)} text={d.tip} side="top">
+                  <button
+                    onClick={() => setSelectedDomain(active ? null : (d.id as string | null))}
+                    className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-2xs font-mono transition-all duration-150"
+                    style={{
+                      background: active ? d.color + '33' : 'rgba(10,14,20,0.75)',
+                      border: `1px solid ${active ? d.color : 'rgba(255,255,255,0.12)'}`,
+                      color: active ? d.color : 'rgba(255,255,255,0.55)',
+                    }}
+                  >
+                    <span>{d.emoji}</span>
+                    <span>{d.label}</span>
+                    {selectedDomain === d.id && d.id !== null && (
+                      <span className="opacity-60">({filteredEvents.length})</span>
+                    )}
+                  </button>
+                </Tooltip>
               );
             })}
           </div>
