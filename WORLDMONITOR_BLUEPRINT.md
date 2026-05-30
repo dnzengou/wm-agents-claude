@@ -1,5 +1,5 @@
 # WorldMonitor Agents — Innovation Upgrade Blueprint
-**Version:** v10 — UX Onboarding, Tooltips, HN/YC Feeds, Resilient Pipeline
+**Version:** v11 — Mobile Layout, CI/Perf/Backend Sprint, Collapsible Panels
 **Framework:** Innovation Upgrade Playbook v01
 **Date:** 2026-05-20
 **Status:** ✅ LIVE — Railway healthy (100 live events); seed fallback active if Railway goes down
@@ -96,9 +96,10 @@ Mobile/Browser
      ↓ HTTPS
 Vercel Edge (Next.js 14 App Router)          worldmonitor-core.vercel.app
   ├── app/page.tsx          → SSR: pre-fetches Railway; falls back to SEED_EVENTS
-  ├── app/api/intelligence/ → Route handler (takes precedence over rewrite):
+  ├── app/api/intelligence/ → Edge route handler (runtime='edge', global PoP):
   │     route.ts              1. Try Railway with 8s timeout
-  │                           2. Fallback: lib/seed-events.ts (30 events, 14 domains)
+  │                           2. Fallback: lib/seed-events.ts (38 events, 14 domains)
+  │                           3. Cache-Control: s-maxage=30 stale-while-revalidate=60
   ├── DashboardClient.tsx   → client island: 30s poll + CoT brief fetch
   └── /api/* rewrite        → proxies remaining routes to Railway (RUST_BACKEND_URL)
           ↓ (when healthy)
@@ -213,6 +214,30 @@ wm-agents-claude/                        ← GitHub repo root
 ```
 
 **Total: ~42 files** (target was ≤ 40; within 5%)
+
+### v11 additions (mobile layout + CI/perf/backend sprint)
+
+**Mobile / Layout**
+- `DashboardClient.tsx`: panels are slide-in drawers on mobile, collapsible inline columns on desktop (lg+). Both panels closed by default on ≤1023px — map fills full screen.
+- `DashboardClient.tsx`: ‹/› toggle tabs float at left/right map edges; tap backdrop to dismiss on mobile.
+- `StatusBar.tsx`: Agents/Latency/Updated stats hidden on mobile; CMD+K search hint hidden; "?" guide button and notification bell always visible.
+
+**CI**
+- `.github/workflows/ci.yml`: `cargo fmt --check` + `rustfmt` component added; frontend `npm ci` (reproducible) + ESLint `continue-on-error`; Node cache via `package-lock.json`; CI summary job writes GitHub step summary table.
+
+**Backend (B)**
+- `worldmonitor-core/src/main.rs` line 182: port binding now reads `state.config.port` instead of hardcoded `8080`. `$PORT` env var now respected.
+- `worldmonitor-core/src/core/mod.rs`: cyber classifier +12 HN-specific keywords (exploit, cve-, rce, supply-chain-attack, side-channel, memory corruption, firmware attack, etc.); energy classifier +7 terms (grid-scale, iron-air, SMR, offshore wind, nuclear fusion, etc.).
+
+**Performance (P)**
+- `/api/intelligence` route: `export const runtime = 'edge'` — zero cold-start, global PoP distribution.
+- `Cache-Control: public, s-maxage=30, stale-while-revalidate=60` for Railway data.
+- `Cache-Control: public, s-maxage=300, stale-while-revalidate=600` for seed fallback.
+- Verified: `X-Vercel-Cache: MISS` → `HIT` on consecutive requests.
+
+**UX Improvements (Im)**
+- `WelcomeTour.tsx`: listens for `wm:show-tour` custom event to reset from StatusBar "?" button.
+- `StatusBar.tsx`: "?" button fires `wm:show-tour` + clears `wm_tour_v1_done` localStorage key.
 
 ### v10 additions (UX onboarding + feed enrichment)
 - `worldmonitor-ui-components/components/ui/WelcomeTour.tsx` — 4-step first-run modal overlay (localStorage-gated `wm_tour_v1_done`); covers live feed, geospatial map, agent network, and keyboard shortcuts; auto-dismissed on close or "Get Started"
