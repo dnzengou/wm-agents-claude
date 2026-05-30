@@ -61,9 +61,9 @@ export function StatusBar({
         </div>
       </div>
 
-      {/* Center Section - Search */}
-      <div className="flex-1 max-w-md mx-4">
-        <div className="glass-panel rounded-lg flex items-center gap-2 px-3 py-1.5">
+      {/* Center Section — hidden on mobile to save space */}
+      <div className="hidden lg:flex flex-1 max-w-md mx-4">
+        <div className="glass-panel rounded-lg flex items-center gap-2 px-3 py-1.5 w-full">
           <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -72,17 +72,17 @@ export function StatusBar({
       </div>
 
       {/* Right Section - Stats & Actions */}
-      <div className="flex items-center gap-4">
-        {/* Agents Active */}
-        <div className="flex items-center gap-2">
-          <span className="text-2xs text-text-muted uppercase tracking-wider">Agents Active:</span>
+      <div className="flex items-center gap-2 lg:gap-4">
+        {/* Agents Active — desktop only */}
+        <div className="hidden lg:flex items-center gap-2">
+          <span className="text-2xs text-text-muted uppercase tracking-wider">Agents:</span>
           <span className="text-sm font-mono font-semibold text-neon">{agentsActive}</span>
         </div>
 
-        <div className="w-px h-4 bg-border-default" />
+        <div className="hidden lg:block w-px h-4 bg-border-default" />
 
-        {/* Latency */}
-        <div className="flex items-center gap-2">
+        {/* Latency — desktop only */}
+        <div className="hidden lg:flex items-center gap-2">
           <span className="text-2xs text-text-muted uppercase tracking-wider">Latency:</span>
           <span className={cn(
             'text-sm font-mono font-semibold',
@@ -92,19 +92,31 @@ export function StatusBar({
           </span>
         </div>
 
-        <div className="w-px h-4 bg-border-default" />
+        <div className="hidden lg:block w-px h-4 bg-border-default" />
 
-        {/* Last Update - Client-side only */}
-        <div className="flex items-center gap-2">
+        {/* Last Update — desktop only */}
+        <div className="hidden lg:flex items-center gap-2">
           <span className="text-2xs text-text-muted uppercase tracking-wider">Updated:</span>
-          <TimeAgo 
-            timestamp={lastUpdate} 
+          <TimeAgo
+            timestamp={lastUpdate}
             className="text-sm font-mono text-text-secondary"
             fallback="--"
           />
         </div>
 
-        <div className="w-px h-4 bg-border-default" />
+        <div className="hidden lg:block w-px h-4 bg-border-default" />
+
+        {/* Guide / replay tour */}
+        <button
+          title="Open quick guide (replay tour)"
+          onClick={() => {
+            try { localStorage.removeItem('wm_tour_v1_done'); } catch { /* */ }
+            window.dispatchEvent(new Event('wm:show-tour'));
+          }}
+          className="p-2 text-text-muted hover:text-neon hover:bg-surface rounded-lg transition-colors font-mono text-sm font-bold"
+        >
+          ?
+        </button>
 
         {/* Notifications */}
         <button className="relative p-2 text-text-muted hover:text-text-primary hover:bg-surface rounded-lg transition-colors">

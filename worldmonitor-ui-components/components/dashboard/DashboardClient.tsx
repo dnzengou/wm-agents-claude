@@ -225,6 +225,18 @@ export function DashboardClient({ initialEvents }: Props) {
       .catch(() => setBriefLoading(false));
   }, [topCountry]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Collapsible panels — both hidden on mobile, open on desktop ────────────
+  const [leftOpen,  setLeftOpen]  = useState(false); // SSR-safe default: closed
+  const [rightOpen, setRightOpen] = useState(false);
+
+  useEffect(() => {
+    // Open both panels only when enough horizontal space is available.
+    // Runs after first paint — SSR-safe (default: both closed).
+    const open = window.innerWidth >= 1024;
+    setLeftOpen(open);
+    setRightOpen(open);
+  }, []);
+
   // ── Domain filter ──────────────────────────────────────────────────────────
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
 
@@ -293,11 +305,50 @@ export function DashboardClient({ initialEvents }: Props) {
         latency={12}
       />
 
-      {/* ── Main 3-column layout ───────────────────────────────────────────── */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
+      {/* ── Main layout ────────────────────────────────────────────────────── */}
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
 
-        {/* Left — Search + Live Feed */}
-        <div className="w-80 flex-shrink-0 border-r border-border-default flex flex-col min-h-0">
+        {/* ── Mobile backdrops — tap to close panel ──────────────────────── */}
+        {leftOpen && (
+          <div
+            className="lg:hidden fixed inset-0 z-[2999] bg-black/50 backdrop-blur-sm"
+            onClick={() => setLeftOpen(false)}
+          />
+        )}
+        {rightOpen && (
+          <div
+            className="lg:hidden fixed inset-0 z-[2999] bg-black/50 backdrop-blur-sm"
+            onClick={() => setRightOpen(false)}
+          />
+        )}
+
+        {/* ── Left panel — Feed ────────────────────────────────────────────── */}
+        {/* Desktop: inline column; mobile: fixed left drawer */}
+        <div className={[
+          'flex-shrink-0 border-r border-border-default flex flex-col min-h-0',
+          'bg-void transition-all duration-300 ease-in-out overflow-hidden',
+          // Desktop: collapse inline (width → 0)
+          'lg:relative lg:z-auto',
+          leftOpen ? 'lg:w-80' : 'lg:w-0 lg:border-r-0',
+          // Mobile: slide-in drawer (fixed left)
+          leftOpen
+            ? 'fixed inset-y-0 left-0 z-[3000] w-80 shadow-2xl'
+            : 'fixed inset-y-0 -left-80 z-[3000] w-80',
+        ].join(' ')}>
+
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle flex-shrink-0">
+            <span className="text-2xs font-mono font-bold text-text-muted uppercase tracking-widest">Live Feed</span>
+            <button
+              onClick={() => setLeftOpen(false)}
+              title="Close panel"
+              className="text-text-disabled hover:text-text-muted transition-colors p-1 rounded"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
           {/* NL Search bar */}
           <div className="px-3 py-2 border-b border-border-subtle flex-shrink-0">
@@ -346,11 +397,32 @@ export function DashboardClient({ initialEvents }: Props) {
           </div>
         </div>
 
-        {/* Center — Map (flex-1, min-h-0 prevents overflow) */}
+        {/* ── Center — Map (always fills remaining space) ──────────────────── */}
         <div className="flex-1 min-h-0 relative">
 
+          {/* Panel toggle tabs — float at map edges */}
+          <Tooltip text={leftOpen ? 'Close feed' : 'Open live feed'} side="right">
+            <button
+              onClick={() => setLeftOpen(o => !o)}
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-[1002] w-6 h-14 flex items-center justify-center rounded-md bg-[rgba(5,7,10,0.85)] border border-[rgba(0,245,255,0.15)] text-text-muted hover:text-neon hover:border-neon/40 transition-all duration-150 backdrop-blur-sm"
+              aria-label={leftOpen ? 'Close feed panel' : 'Open feed panel'}
+            >
+              <span className="text-xs font-mono select-none">{leftOpen ? '‹' : '›'}</span>
+            </button>
+          </Tooltip>
+
+          <Tooltip text={rightOpen ? 'Close agents' : 'Open agent panel'} side="left">
+            <button
+              onClick={() => setRightOpen(o => !o)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-[1002] w-6 h-14 flex items-center justify-center rounded-md bg-[rgba(5,7,10,0.85)] border border-[rgba(0,245,255,0.15)] text-text-muted hover:text-neon hover:border-neon/40 transition-all duration-150 backdrop-blur-sm"
+              aria-label={rightOpen ? 'Close agent panel' : 'Open agent panel'}
+            >
+              <span className="text-xs font-mono select-none">{rightOpen ? '›' : '‹'}</span>
+            </button>
+          </Tooltip>
+
           {/* Layer control */}
-          <div className="absolute top-3 left-3 z-[1001] flex items-center gap-2">
+          <div className="absolute top-3 left-10 z-[1001] flex items-center gap-2">
             <LayerControl
               layers={layers}
               onToggleLayer={handleToggleLayer}
@@ -358,7 +430,7 @@ export function DashboardClient({ initialEvents }: Props) {
             />
           </div>
 
-          {/* Domain filter pills — single scrollable row, never wraps over the map */}
+          {/* Domain filter pills — single scrollable row */}
           <div className="absolute bottom-14 left-0 right-0 z-[1001] flex items-center gap-1 overflow-x-auto no-scrollbar px-3 pointer-events-auto">
             {DOMAINS.map(d => {
               const active = selectedDomain === d.id;
@@ -384,15 +456,35 @@ export function DashboardClient({ initialEvents }: Props) {
             })}
           </div>
 
-          {/* Map — fills the entire center column exactly */}
-          <WorldMap
-            events={filteredEvents}
-            selectedEventId={selectedEventId}
-          />
+          {/* Map */}
+          <WorldMap events={filteredEvents} selectedEventId={selectedEventId} />
         </div>
 
-        {/* Right — Agents + Reasoning */}
-        <div className="w-80 flex-shrink-0 border-l border-border-default flex flex-col min-h-0 overflow-hidden">
+        {/* ── Right panel — Agents + Reasoning ────────────────────────────── */}
+        <div className={[
+          'flex-shrink-0 border-l border-border-default flex flex-col min-h-0 overflow-hidden',
+          'bg-void transition-all duration-300 ease-in-out',
+          'lg:relative lg:z-auto',
+          rightOpen ? 'lg:w-80' : 'lg:w-0 lg:border-l-0',
+          rightOpen
+            ? 'fixed inset-y-0 right-0 z-[3000] w-80 shadow-2xl'
+            : 'fixed inset-y-0 -right-80 z-[3000] w-80',
+        ].join(' ')}>
+
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle flex-shrink-0">
+            <button
+              onClick={() => setRightOpen(false)}
+              title="Close panel"
+              className="text-text-disabled hover:text-text-muted transition-colors p-1 rounded"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <span className="text-2xs font-mono font-bold text-text-muted uppercase tracking-widest">Intel</span>
+          </div>
+
           <div className="flex-1 min-h-0 overflow-auto">
             <AgentStatus agents={agents} title="Agent Status" />
           </div>

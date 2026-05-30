@@ -46,6 +46,11 @@ export function WelcomeTour() {
     try {
       if (!localStorage.getItem(TOUR_KEY)) setVisible(true);
     } catch { /* SSR or storage blocked */ }
+
+    // Allow external trigger (e.g. "?" button in StatusBar)
+    function onShowTour() { setStep(0); setVisible(true); }
+    window.addEventListener('wm:show-tour', onShowTour);
+    return () => window.removeEventListener('wm:show-tour', onShowTour);
   }, []);
 
   function dismiss() {

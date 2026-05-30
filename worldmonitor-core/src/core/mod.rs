@@ -122,8 +122,16 @@ fn classify_domain(text: &str, feed_domain: &'static str) -> &'static str {
         return "nuclear";
     }
     if t.contains("ransomware") || t.contains("cyberattack") || t.contains("data breach")
-        || t.contains("zero-day") || t.contains("malware") || t.contains("phishing")
-        || t.contains("social engineering") || t.contains("ddos")
+        || t.contains("zero-day") || t.contains("zero day") || t.contains("malware")
+        || t.contains("phishing") || t.contains("social engineering") || t.contains("ddos")
+        // HackerNews / security-research signals
+        || t.contains("exploit") || t.contains("vulnerability") || t.contains("cve-")
+        || t.contains("remote code execution") || t.contains("rce") || t.contains("backdoor")
+        || t.contains("supply chain attack") || t.contains("apt group") || t.contains("intrusion")
+        || t.contains("data exfil") || t.contains("credentials leak") || t.contains("sql injection")
+        || t.contains("side-channel") || t.contains("cryptographic flaw")
+        || t.contains("firmware attack") || t.contains("memory corruption")
+        || (t.contains("hack") && (t.contains("critical") || t.contains("government") || t.contains("infrastructure")))
     {
         return "cyber";
     }
@@ -142,7 +150,10 @@ fn classify_domain(text: &str, feed_domain: &'static str) -> &'static str {
     }
     if t.contains("oil spill") || t.contains("pipeline") || t.contains("gas shortage")
         || t.contains("energy crisis") || t.contains("power blackout")
-        || t.contains("electricity grid")
+        || t.contains("electricity grid") || t.contains("grid-scale") || t.contains("grid scale")
+        || t.contains("energy storage") || t.contains("battery tech") || t.contains("iron-air")
+        || t.contains("nuclear fusion") || t.contains("small modular reactor") || t.contains("smr")
+        || t.contains("offshore wind") || t.contains("solar farm disruption")
     {
         return "energy";
     }

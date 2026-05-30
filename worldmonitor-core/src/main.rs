@@ -179,7 +179,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(CompressionLayer::new())
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+    let addr = SocketAddr::from(([0, 0, 0, 0], state.config.port));
     info!("Listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
