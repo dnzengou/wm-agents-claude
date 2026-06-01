@@ -8,6 +8,8 @@ import { TimeAgo } from '../ui/TimeAgo';
 export interface StatusBarProps {
   version: string;
   isLive: boolean;
+  /** true when Kafka-style SSE stream is connected (real-time push active) */
+  isStreaming?: boolean;
   region: string;
   lastUpdate: number;
   alertCount: number;
@@ -19,6 +21,7 @@ export interface StatusBarProps {
 export function StatusBar({
   version,
   isLive,
+  isStreaming = false,
   region,
   lastUpdate,
   alertCount,
@@ -57,6 +60,15 @@ export function StatusBar({
               <StatusPulse status="idle" size="sm" />
               <span className="text-xs font-medium text-text-muted uppercase tracking-wider">Offline</span>
             </>
+          )}
+          {/* SSE streaming badge */}
+          {isStreaming && (
+            <span
+              title="Kafka-style SSE stream active — events pushed in real time"
+              className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono font-bold bg-neon/10 border border-neon/25 text-neon"
+            >
+              ⚡ SSE
+            </span>
           )}
         </div>
       </div>

@@ -47,6 +47,10 @@ urlencoding = "2.1"
 # Zero-dependency XML parser for direct RSS/Atom feed ingestion
 roxmltree = "0.19"
 
+# Kafka-style broadcast: converts tokio broadcast channels into async Streams
+# Used by the SSE /api/stream endpoint
+tokio-stream = { version = "0.1", features = ["sync"] }
+
 [dev-dependencies]
 tokio-test = "0.4"
 

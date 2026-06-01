@@ -40,8 +40,8 @@ struct FeedConfig {
     domain: &'static str,
 }
 
-/// 33 authoritative, public RSS/Atom feeds across 14 intelligence domains.
-/// Includes HackerNews and YC Blog for early-warning tech/cyber signals.
+/// 45 authoritative, public RSS/Atom feeds across 14 intelligence domains.
+/// Includes HackerNews, YC Blog, Bellingcat OSINT, WHO, SpaceNews, Al-Monitor.
 /// Direct XML fetch via roxmltree — no third-party proxy dependency.
 /// Each entry also carries an optional geocoding fallback country for feeds
 /// whose items never mention a country by name (e.g. InciWeb wildfires).
@@ -108,6 +108,41 @@ const FEEDS: &[FeedConfig] = &[
     // ── Tech / Startups — YC Blog ─────────────────────────────────────────────
     // YC essays on dual-use tech, AI safety, climate tech, defense startups.
     FeedConfig { url: "https://www.ycombinator.com/blog/rss",                    domain: "cyber" },
+
+    // ══ RRSS expansion — geographic + domain coverage gaps ════════════════════
+
+    // ── Wire services ────────────────────────────────────────────────────────
+    FeedConfig { url: "https://feeds.reuters.com/reuters/worldNews",              domain: "geopolitical" },
+    FeedConfig { url: "https://apnews.com/hub/world-news?format=rss",            domain: "geopolitical" },
+
+    // ── OSINT / investigative ─────────────────────────────────────────────────
+    // Bellingcat: open-source investigations (MH17, Navalny, chemical attacks)
+    FeedConfig { url: "https://www.bellingcat.com/feed/",                         domain: "geopolitical" },
+
+    // ── Middle East ───────────────────────────────────────────────────────────
+    FeedConfig { url: "https://www.al-monitor.com/rss",                           domain: "geopolitical" },
+    FeedConfig { url: "https://www.middleeasteye.net/rss",                        domain: "geopolitical" },
+    FeedConfig { url: "https://www.jpost.com/Rss/RssFeedsWorld.aspx",            domain: "geopolitical" },
+
+    // ── Asia-Pacific ─────────────────────────────────────────────────────────
+    FeedConfig { url: "https://thediplomat.com/feed/",                            domain: "geopolitical" },
+
+    // ── Russia / CIS (independent press) ─────────────────────────────────────
+    FeedConfig { url: "https://www.themoscowtimes.com/rss",                       domain: "geopolitical" },
+
+    // ── Francophone Africa / Global South — RFI ───────────────────────────────
+    FeedConfig { url: "https://www.rfi.fr/en/rss",                               domain: "geopolitical" },
+
+    // ── Health Security — WHO ─────────────────────────────────────────────────
+    // Disease outbreaks, PHEIC declarations, antimicrobial resistance
+    FeedConfig { url: "https://www.who.int/rss-feeds/news-english.xml",           domain: "natural" },
+
+    // ── Space + Satellite Intelligence ────────────────────────────────────────
+    // ASAT tests, GPS jamming, satellite imagery findings, dual-use launches
+    FeedConfig { url: "https://spacenews.com/feed/",                              domain: "geopolitical" },
+
+    // ── Humanitarian / Conflict Data (ACLED via ReliefWeb topic) ─────────────
+    FeedConfig { url: "https://reliefweb.int/topics/rss.xml",                    domain: "geopolitical" },
 ];
 
 // ─── Domain keyword classifier ────────────────────────────────────────────────

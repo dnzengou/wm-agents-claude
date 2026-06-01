@@ -195,7 +195,7 @@ type Props = {
 };
 
 export function DashboardClient({ initialEvents }: Props) {
-  const { events, isLoading, lastUpdated, refresh } = useIntelligence({
+  const { events, isLoading, lastUpdated, refresh, streaming } = useIntelligence({
     initialData: initialEvents,
     pollInterval: 30_000,
   });
@@ -298,6 +298,7 @@ export function DashboardClient({ initialEvents }: Props) {
       <StatusBar
         version="2.7.0"
         isLive={!isLoading}
+        isStreaming={streaming}
         region="Global"
         lastUpdate={lastUpdated ?? Date.now()}
         alertCount={alertCount}
