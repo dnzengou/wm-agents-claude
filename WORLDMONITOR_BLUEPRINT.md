@@ -1,8 +1,8 @@
 # WorldMonitor Agents — Innovation Upgrade Blueprint
-**Version:** v11 — Mobile Layout, CI/Perf/Backend Sprint, Collapsible Panels
+**Version:** v12 — KafCa SSE Streaming · ARM Multi-arch · 45 RSS Feeds
 **Framework:** Innovation Upgrade Playbook v01
 **Date:** 2026-05-20
-**Status:** ✅ LIVE — Railway healthy (100 live events); seed fallback active if Railway goes down
+**Status:** ✅ LIVE — 100 live events · SSE stream healthy · arm64 Docker build passing
 
 ---
 
@@ -16,14 +16,18 @@
 
 ### Verified endpoints
 ```
-GET  /api/intelligence → 30 seed events (14 domains) — responds in < 100ms
-                         X-Source: seed-data  (Railway fallback active)
-                         X-Source: railway-backend  (when Railway is healthy)
-POST /api/brief        → proxied to Railway (may fail while backend is inactive)
-GET  /api/geo          → proxied to Railway
-GET  /api/sync?since=N → proxied to Railway (silent failure in useIntelligence hook)
-POST /api/user         → proxied to Railway
-POST /api/alerts       → proxied to Railway
+GET  /api/intelligence → 100 live events (Railway) / 38 seed (fallback)
+                         Cache-Control: s-maxage=30 stale-while-revalidate=60
+                         X-Source: railway-backend | seed-data
+GET  /api/stream       → SSE text/event-stream; event:intel batches on ingest
+                         Edge proxy — pipes Railway broadcast without buffering
+                         Keepalive comment every 30 s; EventSource auto-reconnects
+POST /api/brief        → Railway Groq LLaMA-3 brief (L1 DashMap + L2 SQLite cache)
+GET  /api/geo          → GeoJSON FeatureCollection from events
+GET  /api/sync?since=N → differential sync (silent failure handled in hook)
+POST /api/user         → user profile get/create/update
+POST /api/alerts       → alert subscriptions (3 free / unlimited pro)
+GET  /health           → {"status":"ok","version":"0.2.0","timestamp":...}
 ```
 
 ### Railway backend restoration
@@ -89,31 +93,39 @@ Next.js SSR pre-fetch → client hydration → 30s differential sync.
 
 ---
 
-## 2. As-Built Architecture (v5 — Multi-Domain)
+## 2. As-Built Architecture (v12 — KafCa SSE + ARM + 45 Feeds)
 
 ```
 Mobile/Browser
-     ↓ HTTPS
+     ↓ HTTPS (polling + SSE long-lived connection)
 Vercel Edge (Next.js 14 App Router)          worldmonitor-core.vercel.app
-  ├── app/page.tsx          → SSR: pre-fetches Railway; falls back to SEED_EVENTS
-  ├── app/api/intelligence/ → Edge route handler (runtime='edge', global PoP):
-  │     route.ts              1. Try Railway with 8s timeout
-  │                           2. Fallback: lib/seed-events.ts (38 events, 14 domains)
-  │                           3. Cache-Control: s-maxage=30 stale-while-revalidate=60
-  ├── DashboardClient.tsx   → client island: 30s poll + CoT brief fetch
-  └── /api/* rewrite        → proxies remaining routes to Railway (RUST_BACKEND_URL)
-          ↓ (when healthy)
+  ├── app/page.tsx               → SSR: pre-fetches Railway; falls back to SEED_EVENTS
+  ├── app/api/intelligence/      → Edge handler (runtime='edge', global PoP)
+  │     route.ts                   1. Proxy Railway 8s timeout → 2. Seed fallback
+  │                                Cache-Control: s-maxage=30 stale-while-revalidate=60
+  ├── app/api/stream/            → Edge SSE proxy (runtime='edge')
+  │     route.ts                   Pipes Railway broadcast body without buffering
+  │                                X-Accel-Buffering: no; Connection: keep-alive
+  ├── hooks/useEventStream.ts    → EventSource client; exp-backoff reconnect (maxRetries=5)
+  ├── hooks/useIntelligence.ts   → SSE primary + 30s polling fallback; `streaming` flag
+  ├── DashboardClient.tsx        → ⚡ SSE badge when streaming; collapsible panels
+  └── /api/* rewrite             → remaining routes proxied to Railway
+          ↓ persistent SSE + request/response
 Railway (Rust/Axum 0.7, Tokio)               wm-agents-claude-production.up.railway.app
   ├── GET  /api/intelligence  → SQLite events (24h, severity DESC)
+  ├── GET  /api/stream        → SSE fan-out via tokio::sync::broadcast (cap 16)
+  │                             Broadcasts Arc<Vec<IntelEvent>> on each ingest cycle
+  │                             Keepalive comment every 30s
   ├── POST /api/brief         → L1 DashMap (1h) → L2 SQLite (24h) → L3 Groq
   ├── GET  /api/geo           → GeoJSON from events
   ├── GET  /api/sync          → differential sync since timestamp
   ├── GET/POST /api/user      → user profile, streak, interests
   └── POST /api/alerts        → alert subscriptions (3 free max)
           ↓
-  SQLite (Railway persistent volume /app/data/worldmonitor.db)
-  GDELT GeoJSON API  (polled every ~5 min; query: conflict|war|nuclear|cyber|disaster, 6h window)
-  RSS feeds          (19 feeds, 13 domains, concurrent via tokio::spawn, roxmltree parser)
+  SQLite (/app/data/worldmonitor.db — Railway persistent volume)
+  GDELT GeoJSON API  (polled every 15 min)
+  RSS feeds          (45 feeds, 14 domains — RRSS expansion: Reuters, AP, Bellingcat,
+                      Al-Monitor, MEE, Moscow Times, RFI, WHO, SpaceNews + original 34)
   Groq LLaMA-3 API   (on-demand, cached aggressively)
 ```
 
@@ -151,6 +163,7 @@ wm-agents-claude/                        ← GitHub repo root
 │   │   ├── api/
 │   │   │   ├── mod.rs
 │   │   │   ├── intelligence.rs          ← GET /api/intelligence
+│   │   │   ├── sse.rs                   ← GET /api/stream — Kafka broadcast SSE (v12)
 │   │   │   ├── brief.rs                 ← POST /api/brief (dual-cache + Groq)
 │   │   │   ├── geo.rs                   ← GET /api/geo
 │   │   │   ├── sync.rs                  ← GET /api/sync
@@ -176,8 +189,10 @@ wm-agents-claude/                        ← GitHub repo root
 │   │   ├── loading.tsx
 │   │   ├── page.tsx                     ← SSR server component; seeds fallback when Railway down
 │   │   ├── api/
-│   │   │   └── intelligence/
-│   │   │       └── route.ts             ← Route handler: proxy Railway → seed fallback (v9)
+│   │   │   ├── intelligence/
+│   │   │   │   └── route.ts             ← Edge handler: proxy Railway → seed fallback
+│   │   │   └── stream/
+│   │   │       └── route.ts             ← Edge SSE proxy → Railway broadcast (v12)
 │   │   └── onboarding/page.tsx
 │   ├── components/
 │   │   ├── dashboard/
@@ -201,7 +216,8 @@ wm-agents-claude/                        ← GitHub repo root
 │   │       ├── StatusPulse.tsx
 │   │       └── TimeAgo.tsx
 │   ├── hooks/
-│   │   ├── useIntelligence.ts           ← Full refresh + 30s differential sync
+│   │   ├── useIntelligence.ts           ← SSE primary + 30s polling fallback; streaming flag
+│   │   ├── useEventStream.ts            ← EventSource client, exp-backoff reconnect (v12)
 │   │   ├── useCommandPalette.ts
 │   │   └── useDebounce.ts
 │   └── lib/
@@ -214,6 +230,27 @@ wm-agents-claude/                        ← GitHub repo root
 ```
 
 **Total: ~42 files** (target was ≤ 40; within 5%)
+
+### v12 additions (KafCa SSE · ARM multi-arch · RRSS 45 feeds)
+
+**KafCa — Kafka-style streaming + SSE**
+- `worldmonitor-core/Cargo.toml`: `tokio-stream` dep (BroadcastStream adapter)
+- `worldmonitor-core/src/main.rs`: `AppState.event_tx: broadcast::Sender<Arc<Vec<IntelEvent>>>` (capacity 16); `ingest_once` broadcasts batch after DB write; `/api/stream` route registered
+- `worldmonitor-core/src/api/sse.rs`: `GET /api/stream` — `Sse<BroadcastStream>` handler; 30s keepalive comment; lagged errors skipped gracefully
+- `worldmonitor-ui-components/app/api/stream/route.ts`: Edge SSE proxy; pipes Railway body without buffering; `X-Accel-Buffering: no`
+- `worldmonitor-ui-components/hooks/useEventStream.ts`: `EventSource` client with exponential-backoff reconnect (2s→32s), `onBatch`/`onConnect`/`onDisconnect` callbacks, `maxRetries=5` guard
+- `worldmonitor-ui-components/hooks/useIntelligence.ts`: SSE primary (prepends new batches); polling fallback at 30s regardless; exposes `streaming: boolean`
+- `worldmonitor-ui-components/components/dashboard/StatusBar.tsx`: `⚡ SSE` badge displayed when `isStreaming=true`
+
+**ARM — Multi-arch Docker**
+- `Dockerfile`: three-stage build with `--platform=${BUILDPLATFORM}` compile stage; conditional `aarch64-linux-gnu` cross-toolchain (`rustup target add aarch64-unknown-linux-gnu`); runtime stage uses `--platform=${TARGETPLATFORM}`
+- `ci.yml`: matrix `[linux/amd64, linux/arm64]`; `docker/setup-qemu-action@v3` for QEMU; per-platform GHA cache scope
+
+**RRSS — 45 RSS feeds (was 34)**
+Added: Reuters World, AP News, Bellingcat (OSINT investigations), Al-Monitor (Middle East),
+Middle East Eye, Jerusalem Post, The Diplomat (Asia-Pacific), Moscow Times (Russia/CIS
+independent press), RFI (Francophone Africa/Global South), WHO (health security),
+SpaceNews (ASAT/satellite intelligence), ReliefWeb topics (humanitarian/ACLED).
 
 ### v11 additions (mobile layout + CI/perf/backend sprint)
 
