@@ -1,0 +1,46 @@
+{
+  "packageId": "app.yavro.worldmonitor",
+  "host": "worldmonitor-core.vercel.app",
+  "name": "WorldMonitor",
+  "launcherName": "WorldMonitor",
+  "display": "standalone",
+  "themeColor": "#080d16",
+  "navigationColor": "#080d16",
+  "navigationColorDark": "#080d16",
+  "navigationDividerColor": "#080d16",
+  "navigationDividerColorDark": "#080d16",
+  "backgroundColor": "#080d16",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://worldmonitor-core.vercel.app/icons/icon-512.png",
+  "maskableIconUrl": "https://worldmonitor-core.vercel.app/icons/icon-512-maskable.png",
+  "splashScreenFadeOutDuration": 300,
+  "appVersion": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "shortName": "Dashboard",
+      "url": "/",
+      "iconUrl": "https://worldmonitor-core.vercel.app/icons/icon-192.png"
+    }
+  ],
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "1.0.0",
+  "minSdkVersion": 23,
+  "orientation": "any",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": { "enabled": false },
+    "playBilling": { "enabled": false }
+  },
+  "alphaDependencies": { "enabled": false },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://worldmonitor-core.vercel.app/",
+  "minimalNavigationDelta": false
+}

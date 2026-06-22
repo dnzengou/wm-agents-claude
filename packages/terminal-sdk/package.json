@@ -1,0 +1,37 @@
+{
+  "name": "@worldmonitor/terminal",
+  "version": "1.2.0",
+  "description": "Embeddable React component for the WorldMonitor intelligence terminal — multi-agent OSINT feed, live geo map, CoT reasoning, tier-gated PII.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "source": "./src/index.js"
+    },
+    "./jsx": "./src/WorldMonitor.jsx"
+  },
+  "files": ["dist", "src", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --format=esm --outfile=dist/index.mjs --jsx=automatic --external:react --external:react-dom && esbuild src/index.js --bundle --format=cjs --outfile=dist/index.cjs --jsx=automatic --external:react --external:react-dom",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  },
+  "keywords": ["osint", "intelligence", "react", "dashboard", "agents", "terminal", "worldmonitor"],
+  "license": "MIT",
+  "sideEffects": false,
+  "homepage": "https://worldmonitor-core.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dnzengou/wm-agents-claude.git",
+    "directory": "packages/terminal-sdk"
+  }
+}
