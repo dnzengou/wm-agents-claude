@@ -10,7 +10,10 @@ use tracing::{debug, info};
 
 use crate::{
     cache::{strategies::*, Cache},
-    models::{requests::UserUpdateRequest, responses::{ErrorResponse, UserResponse}},
+    models::{
+        requests::UserUpdateRequest,
+        responses::{ErrorResponse, UserResponse},
+    },
     AppState,
 };
 
@@ -65,7 +68,9 @@ pub async fn get_handler(
             };
 
             // Cache the response
-            state.cache.put_json_with_ttl(&cache_key, &response, USER_TTL);
+            state
+                .cache
+                .put_json_with_ttl(&cache_key, &response, USER_TTL);
 
             Ok(Json(response))
         }

@@ -1,9 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
-    Json as AxumJson,
-};
+use axum::{extract::State, http::StatusCode, response::Json, Json as AxumJson};
 use std::sync::Arc;
 use tracing::{debug, info};
 

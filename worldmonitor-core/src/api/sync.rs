@@ -21,7 +21,11 @@ pub async fn handler(
     // Fetch events since the provided timestamp
     match state.db.get_events_since(params.since).await {
         Ok(events) => {
-            debug!("Returning {} new events since {}", events.len(), params.since);
+            debug!(
+                "Returning {} new events since {}",
+                events.len(),
+                params.since
+            );
             Ok(Json(SyncResponse {
                 new_events: events,
                 server_time: chrono::Utc::now().timestamp_millis(),

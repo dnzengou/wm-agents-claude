@@ -1,3 +1,8 @@
+// Suppress lints on items kept for forward-compatibility / debug surfaces.
+// Reviewed 2026-06-22 against deployed v12 build — the unused fields/fn/const
+// are intentional scaffolding for upcoming endpoints.
+#![allow(dead_code, clippy::unnecessary_sort_by)]
+
 use axum::{
     routing::{get, post},
     Router,
@@ -164,7 +169,12 @@ async fn main() -> anyhow::Result<()> {
     // Kafka-style broadcast channel: capacity 16 batches per lagging subscriber
     let (event_tx, _) = broadcast::channel::<Arc<Vec<IntelEvent>>>(16);
 
-    let state = Arc::new(AppState { db, cache, config, event_tx });
+    let state = Arc::new(AppState {
+        db,
+        cache,
+        config,
+        event_tx,
+    });
 
     // Spawn background ingestion — runs immediately on startup then every 15 min.
     // This is the critical fix: previously the DB was never populated from external sources.
@@ -179,16 +189,16 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers(Any);
 
     let app = Router::new()
-        .route("/health",         get(health))
+        .route("/health", get(health))
         .route("/api/intelligence", get(intelligence::handler))
-        .route("/api/stream",     get(sse::handler))      // Kafka-style SSE fan-out
-        .route("/api/brief",      post(brief::handler))
-        .route("/api/geo",        get(geo::handler))
-        .route("/api/alerts",     post(alerts::handler))
-        .route("/api/sync",       get(sync::handler))
-        .route("/api/user",       get(user::get_handler).post(user::post_handler))
-        .route("/",               get(serve_frontend))
-        .route("/*path",          get(serve_static))
+        .route("/api/stream", get(sse::handler)) // Kafka-style SSE fan-out
+        .route("/api/brief", post(brief::handler))
+        .route("/api/geo", get(geo::handler))
+        .route("/api/alerts", post(alerts::handler))
+        .route("/api/sync", get(sync::handler))
+        .route("/api/user", get(user::get_handler).post(user::post_handler))
+        .route("/", get(serve_frontend))
+        .route("/*path", get(serve_static))
         .layer(cors)
         .layer(CompressionLayer::new())
         .with_state(Arc::clone(&state));

@@ -348,7 +348,12 @@ impl Database {
     // ==================== Alert Operations ====================
 
     /// Create alert
-    pub async fn create_alert(&self, user_id: &str, country: &str, threshold: i32) -> anyhow::Result<()> {
+    pub async fn create_alert(
+        &self,
+        user_id: &str,
+        country: &str,
+        threshold: i32,
+    ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
             INSERT INTO alerts (user_id, country, threshold)
@@ -413,7 +418,12 @@ impl Database {
     }
 
     /// Cache brief
-    pub async fn cache_brief(&self, country: &str, summary: &str, event_count: i32) -> anyhow::Result<()> {
+    pub async fn cache_brief(
+        &self,
+        country: &str,
+        summary: &str,
+        event_count: i32,
+    ) -> anyhow::Result<()> {
         let now = chrono::Utc::now().timestamp_millis();
         let expires = now + (24 * 60 * 60 * 1000); // 24 hours
 

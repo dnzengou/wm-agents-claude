@@ -8,7 +8,10 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::{
-    models::{requests::AlertRequest, responses::{ErrorResponse, SuccessResponse}},
+    models::{
+        requests::AlertRequest,
+        responses::{ErrorResponse, SuccessResponse},
+    },
     AppState,
 };
 
