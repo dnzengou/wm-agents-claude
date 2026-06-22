@@ -13,6 +13,12 @@ pub struct IntelEvent {
     pub source: String,
     pub timestamp: i64,
     pub created_at: Option<DateTime<Utc>>,
+    /// Intelligence domain: geopolitical | cyber | energy | climate | wildfire |
+    /// water | natural | nuclear | mining | deforestation | ocean | demographics |
+    /// uninsurability | critical_minerals
+    pub domain: String,
+    /// Original article URL (RSS feeds only; None for GDELT events).
+    pub link: Option<String>,
 }
 
 impl IntelEvent {
@@ -27,7 +33,21 @@ impl IntelEvent {
             source: source.to_string(),
             timestamp: Utc::now().timestamp_millis(),
             created_at: Some(Utc::now()),
+            domain: "geopolitical".to_string(),
+            link: None,
         }
+    }
+
+    /// Builder: set intelligence domain.
+    pub fn with_domain(mut self, domain: &str) -> Self {
+        self.domain = domain.to_string();
+        self
+    }
+
+    /// Builder: set source article URL.
+    pub fn with_link(mut self, link: Option<String>) -> Self {
+        self.link = link;
+        self
     }
 
     /// Get grid key for deduplication (0.1 degree precision)
@@ -135,30 +155,15 @@ pub struct GdeltResponse {
     pub features: Vec<GdeltFeature>,
 }
 
-/// RSS item from feed
-#[derive(Debug, Clone, Deserialize)]
-pub struct RssItem {
-    pub title: String,
-    pub description: Option<String>,
-    pub pub_date: Option<String>,
-    pub link: Option<String>,
-}
-
-/// RSS feed response
-#[derive(Debug, Clone, Deserialize)]
-pub struct RssResponse {
-    pub items: Vec<RssItem>,
-}
-
 /// GeoJSON for map rendering
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoJson {
     #[serde(rename = "type")]
     pub geo_type: String,
     pub features: Vec<GeoFeature>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoFeature {
     #[serde(rename = "type")]
     pub feature_type: String,
@@ -166,14 +171,14 @@ pub struct GeoFeature {
     pub properties: GeoProperties,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoGeometry {
     #[serde(rename = "type")]
     pub geometry_type: String,
     pub coordinates: Vec<f64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeoProperties {
     pub country: String,
     pub severity: i32,
@@ -330,9 +335,14 @@ impl CountryCoords {
         coords.get(country).copied()
     }
 
-    /// Extract country names from text using keyword matching
+    /// Extract country names from text.
+    ///
+    /// Uses **word-boundary matching** to avoid false positives like:
+    ///   "woman" → Oman, "Somalia" → Mali, "Nigeria" → Niger
+    /// Returns countries **sorted by first occurrence** in the text so the
+    /// most-prominent subject of an article is always first.
     pub fn extract_from_text(text: &str) -> Vec<String> {
-        let countries = vec![
+        const COUNTRIES: &[&str] = &[
             "Ukraine", "Russia", "Israel", "Gaza", "China", "Taiwan", "Iran", "Syria",
             "United States", "United Kingdom", "Germany", "France", "Turkey", "Saudi Arabia",
             "India", "Pakistan", "North Korea", "South Korea", "Japan", "Australia",
@@ -352,15 +362,80 @@ impl CountryCoords {
             "El Salvador", "Belize", "Cuba", "Haiti", "Dominican Republic", "Jamaica",
             "Trinidad and Tobago", "Barbados", "Saint Lucia", "Grenada", "Saint Vincent",
             "Antigua and Barbuda", "Saint Kitts and Nevis", "Dominica",
+            // US states — critical for wildfire, hurricane, flood geo-tagging
+            "California", "Texas", "Florida", "New York", "Arizona", "Oregon",
+            "Washington", "Colorado", "Nevada", "Montana", "Wyoming", "Idaho",
+            "New Mexico", "Louisiana", "Georgia", "North Carolina", "South Carolina",
+            "Virginia", "Michigan", "Minnesota", "Wisconsin",
+        ];
+
+        // Map US state names to their country for coordinate lookup
+        const STATE_COUNTRY: &[(&str, &str)] = &[
+            ("California", "United States"), ("Texas", "United States"),
+            ("Florida", "United States"), ("New York", "United States"),
+            ("Arizona", "United States"), ("Oregon", "United States"),
+            ("Washington", "United States"), ("Colorado", "United States"),
+            ("Nevada", "United States"), ("Montana", "United States"),
+            ("Wyoming", "United States"), ("Idaho", "United States"),
+            ("New Mexico", "United States"), ("Louisiana", "United States"),
+            ("Georgia", "United States"), ("North Carolina", "United States"),
+            ("South Carolina", "United States"), ("Virginia", "United States"),
+            ("Michigan", "United States"), ("Minnesota", "United States"),
+            ("Wisconsin", "United States"),
         ];
 
         let text_lower = text.to_lowercase();
-        countries
-            .into_iter()
-            .filter(|c| text_lower.contains(&c.to_lowercase()))
-            .map(|c| c.to_string())
-            .collect()
+        let mut found: Vec<(usize, String)> = COUNTRIES
+            .iter()
+            .filter_map(|&c| {
+                word_match_pos(&text_lower, &c.to_lowercase()).map(|pos| {
+                    // Resolve US states to "United States" for coordinate lookup
+                    let canonical = STATE_COUNTRY
+                        .iter()
+                        .find(|(state, _)| *state == c)
+                        .map(|(_, country)| country.to_string())
+                        .unwrap_or_else(|| c.to_string());
+                    (pos, canonical)
+                })
+            })
+            .collect();
+
+        // Sort by first occurrence so the most-prominent subject comes first
+        found.sort_by_key(|(pos, _)| *pos);
+
+        // Deduplicate (multiple states may resolve to "United States")
+        let mut seen = std::collections::HashSet::new();
+        found.retain(|(_, c)| seen.insert(c.clone()));
+
+        found.into_iter().map(|(_, c)| c).collect()
     }
+}
+
+/// Find `word` (lowercase) as a whole word within `text` (lowercase).
+/// A word boundary is any non-ASCII-alpha character.
+/// Returns the byte position of the first match, or None.
+fn word_match_pos(text: &str, word: &str) -> Option<usize> {
+    let wlen = word.len();
+    let tbytes = text.as_bytes();
+    let tlen = text.len();
+    let mut start = 0;
+
+    while start + wlen <= tlen {
+        match text[start..].find(word) {
+            None => break,
+            Some(rel) => {
+                let abs = start + rel;
+                let before_ok = abs == 0 || !tbytes[abs - 1].is_ascii_alphabetic();
+                let after = abs + wlen;
+                let after_ok = after >= tlen || !tbytes[after].is_ascii_alphabetic();
+                if before_ok && after_ok {
+                    return Some(abs);
+                }
+                start = abs + 1;
+            }
+        }
+    }
+    None
 }
 
 /// API request/response types
@@ -392,7 +467,7 @@ pub mod requests {
 }
 
 pub mod responses {
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize)]
     pub struct ErrorResponse {
@@ -406,7 +481,7 @@ pub mod responses {
         pub message: Option<String>,
     }
 
-    #[derive(Debug, Serialize)]
+    #[derive(Debug, Serialize, Deserialize)]
     pub struct UserResponse {
         pub user_id: String,
         pub streak: i32,

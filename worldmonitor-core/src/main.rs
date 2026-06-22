@@ -4,6 +4,7 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info, warn};
@@ -14,9 +15,10 @@ mod core;
 mod db;
 mod models;
 
-use api::{alerts, brief, geo, intelligence, sync, user};
+use api::{alerts, brief, geo, intelligence, sse, sync, user};
 use cache::Cache;
 use db::Database;
+use models::IntelEvent;
 
 /// Shared application state — cheap to clone because everything inside is Arc'd.
 #[derive(Clone)]
@@ -24,6 +26,10 @@ pub struct AppState {
     pub db: Database,
     pub cache: Cache,
     pub config: AppConfig,
+    /// Kafka-style fan-out: ingestion broadcasts new event batches here;
+    /// every SSE subscriber holds its own Receiver via subscribe().
+    /// Capacity 16 = up to 16 batches buffered per lagging subscriber.
+    pub event_tx: broadcast::Sender<Arc<Vec<IntelEvent>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -101,6 +107,10 @@ async fn ingest_once(state: &AppState) {
                 events.len(),
                 inserted
             );
+            // Broadcast to all SSE subscribers (Kafka-style fan-out).
+            // send() only errors when 0 receivers exist — that's normal when no
+            // clients are connected, so we silently discard the error.
+            let _ = state.event_tx.send(Arc::new(events));
         }
         Err(e) => error!("Failed to persist ingested events: {}", e),
     }
@@ -151,7 +161,10 @@ async fn main() -> anyhow::Result<()> {
     let cache = Cache::new();
     info!("Cache ready");
 
-    let state = Arc::new(AppState { db, cache, config });
+    // Kafka-style broadcast channel: capacity 16 batches per lagging subscriber
+    let (event_tx, _) = broadcast::channel::<Arc<Vec<IntelEvent>>>(16);
+
+    let state = Arc::new(AppState { db, cache, config, event_tx });
 
     // Spawn background ingestion — runs immediately on startup then every 15 min.
     // This is the critical fix: previously the DB was never populated from external sources.
@@ -166,20 +179,22 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers(Any);
 
     let app = Router::new()
-        .route("/health", get(health))
+        .route("/health",         get(health))
         .route("/api/intelligence", get(intelligence::handler))
-        .route("/api/brief", post(brief::handler))
-        .route("/api/geo", get(geo::handler))
-        .route("/api/alerts", post(alerts::handler))
-        .route("/api/sync", get(sync::handler))
-        .route("/api/user", get(user::get_handler).post(user::post_handler))
-        .route("/", get(serve_frontend))
-        .route("/*path", get(serve_static))
+        .route("/api/stream",     get(sse::handler))      // Kafka-style SSE fan-out
+        .route("/api/brief",      post(brief::handler))
+        .route("/api/geo",        get(geo::handler))
+        .route("/api/alerts",     post(alerts::handler))
+        .route("/api/sync",       get(sync::handler))
+        .route("/api/user",       get(user::get_handler).post(user::post_handler))
+        .route("/",               get(serve_frontend))
+        .route("/*path",          get(serve_static))
         .layer(cors)
         .layer(CompressionLayer::new())
-        .with_state(state);
+        .with_state(Arc::clone(&state));
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+    let port = state.config.port;
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     info!("Listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

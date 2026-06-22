@@ -1,18 +1,20 @@
 # ── Stage 1: dependency cache layer ──────────────────────────────────────────
 # Separate layer so `cargo build --release` only re-runs when src changes,
 # not on every Cargo.lock touch.
-FROM rust:1.77-slim-bookworm AS deps
+FROM rust:1.86-slim-bookworm AS deps
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev \
+    pkg-config libssl-dev libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml ./
 # Generate lockfile and build a dummy main to cache dependencies
 RUN cargo generate-lockfile \
     && mkdir src && echo "fn main() {}" > src/main.rs \
+# Build a dummy main to cache dependencies (Cargo.lock is not committed)
+RUN mkdir src && echo "fn main() {}" > src/main.rs \
     && cargo build --release \
     && rm -rf src
 

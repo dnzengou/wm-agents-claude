@@ -29,7 +29,7 @@ export function LayerControl({
 }: LayerControlProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set([...new Set(layers.map(l => l.category))])
+    new Set(Array.from(new Set(layers.map(l => l.category))))
   );
 
   // Group layers by category

@@ -1,0 +1,181 @@
+/* ── Leaflet container ─────────────────────────────────────────────────────── */
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  background: #080d16;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+/* ── Popup dark theme ──────────────────────────────────────────────────────── */
+.leaflet-popup-content-wrapper {
+  background: rgba(10, 15, 26, 0.95);
+  border: 1px solid rgba(0, 245, 255, 0.2);
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.1), 0 4px 24px rgba(0, 0, 0, 0.6);
+  color: #e2e8f0;
+  backdrop-filter: blur(12px);
+}
+
+.leaflet-popup-tip {
+  background: rgba(10, 15, 26, 0.95);
+}
+
+.leaflet-popup-content {
+  margin: 12px 16px;
+  min-width: 200px;
+}
+
+.leaflet-popup-close-button {
+  color: #64748b !important;
+  font-size: 18px !important;
+  padding: 4px 8px !important;
+  top: 4px !important;
+  right: 4px !important;
+}
+
+.leaflet-popup-close-button:hover {
+  color: #00f5ff !important;
+  background: transparent !important;
+}
+
+/* ── Zoom controls dark theme ─────────────────────────────────────────────── */
+.leaflet-control-zoom {
+  border: 1px solid rgba(0, 245, 255, 0.15) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+
+.leaflet-control-zoom a {
+  background: rgba(10, 15, 26, 0.9) !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid rgba(0, 245, 255, 0.1) !important;
+  width: 32px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  font-size: 16px !important;
+  backdrop-filter: blur(8px);
+  transition: all 0.15s ease;
+}
+
+.leaflet-control-zoom a:hover {
+  background: rgba(0, 245, 255, 0.1) !important;
+  color: #00f5ff !important;
+}
+
+.leaflet-control-zoom-out {
+  border-bottom: none !important;
+}
+
+/* ── Attribution ──────────────────────────────────────────────────────────── */
+.leaflet-control-attribution {
+  background: rgba(8, 13, 22, 0.7) !important;
+  color: #475569 !important;
+  font-size: 9px !important;
+  backdrop-filter: blur(4px);
+}
+
+.leaflet-control-attribution a {
+  color: #64748b !important;
+}
+
+/* ── Popup inner layout ───────────────────────────────────────────────────── */
+.wm-popup-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wm-popup-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wm-popup-country {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.wm-popup-headline {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #e2e8f0;
+  line-height: 1.4;
+  margin: 0;
+  font-family: inherit;
+}
+
+.wm-popup-headline-link {
+  display: block;
+  color: #e2e8f0;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.wm-popup-headline-link:hover {
+  color: #00f5ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wm-popup-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wm-popup-source {
+  font-size: 9px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #475569;
+  background: rgba(255,255,255,0.06);
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+.wm-popup-domain {
+  font-size: 9px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.wm-popup-link {
+  margin-left: auto;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 600;
+  color: #00f5ff;
+  text-decoration: none;
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+.wm-popup-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Marker pulse animation ───────────────────────────────────────────────── */
+@keyframes wm-pulse {
+  0%   { opacity: 0.8; transform: scale(1); }
+  50%  { opacity: 0.3; transform: scale(1.8); }
+  100% { opacity: 0;   transform: scale(2.4); }
+}
+
+.wm-pulse-ring {
+  animation: wm-pulse 2s ease-out infinite;
+}

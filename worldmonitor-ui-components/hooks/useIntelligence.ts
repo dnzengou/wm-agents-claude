@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, IntelEvent } from '@/lib/api';
 import { getUserId } from '@/lib/user';
+import { useEventStream } from './useEventStream';
 
 type Options = {
   /** Pre-fetched data from the server component — avoids a client-side round-trip on mount. */
@@ -12,23 +13,26 @@ type Options = {
 };
 
 type State = {
-  events: IntelEvent[];
-  isLoading: boolean;
-  error: string | null;
+  events:      IntelEvent[];
+  isLoading:   boolean;
+  error:       string | null;
   lastUpdated: number | null;
+  /** true while SSE stream is connected (Kafka-style real-time push active) */
+  streaming:   boolean;
 };
 
 export function useIntelligence({ initialData = [], pollInterval = 30_000 }: Options = {}) {
   const [state, setState] = useState<State>({
-    events: initialData,
-    isLoading: initialData.length === 0,
-    error: null,
+    events:      initialData,
+    isLoading:   initialData.length === 0,
+    error:       null,
     lastUpdated: initialData.length > 0 ? Date.now() : null,
+    streaming:   false,
   });
 
-  // Track the last sync timestamp for differential updates
-  const lastSync = useRef<number>(Date.now() - 60_000);
-  const mounted = useRef(true);
+  const lastSync   = useRef<number>(Date.now() - 60_000);
+  const mounted    = useRef(true);
+  const streamingRef = useRef(false); // shadow state for interval callbacks
 
   const setPartial = (patch: Partial<State>) =>
     setState(prev => ({ ...prev, ...patch }));
@@ -40,8 +44,14 @@ export function useIntelligence({ initialData = [], pollInterval = 30_000 }: Opt
       const data = await api.intelligence.getLatest();
       if (!mounted.current) return;
       lastSync.current = Date.now();
-      setState({ events: data, isLoading: false, error: null, lastUpdated: Date.now() });
-    } catch (err) {
+      setState(prev => ({
+        ...prev,
+        events:      data,
+        isLoading:   false,
+        error:       null,
+        lastUpdated: Date.now(),
+      }));
+    } catch {
       if (!mounted.current) return;
       setPartial({ isLoading: false, error: 'Unable to reach intelligence server' });
     }
@@ -57,8 +67,11 @@ export function useIntelligence({ initialData = [], pollInterval = 30_000 }: Opt
         const existingIds = new Set(prev.events.map(e => e.id));
         const fresh = new_events.filter(e => !existingIds.has(e.id));
         if (fresh.length === 0) return prev;
-        const merged = [...fresh, ...prev.events].slice(0, 100);
-        return { ...prev, events: merged, lastUpdated: Date.now() };
+        return {
+          ...prev,
+          events:      [...fresh, ...prev.events].slice(0, 100),
+          lastUpdated: Date.now(),
+        };
       });
       lastSync.current = server_time;
     } catch {
@@ -66,18 +79,40 @@ export function useIntelligence({ initialData = [], pollInterval = 30_000 }: Opt
     }
   }, []);
 
+  // ── SSE: Kafka-style real-time push ──────────────────────────────────────
+  // When connected, the ingestion loop's broadcast arrives here directly.
+  // Polling stays active at full rate as fallback; SSE just pre-empts it.
+  useEventStream({
+    onBatch: (incoming) => {
+      if (!mounted.current) return;
+      setState(prev => {
+        const existingIds = new Set(prev.events.map(e => e.id));
+        const fresh = incoming.filter(e => !existingIds.has(e.id));
+        if (fresh.length === 0) return prev;
+        return {
+          ...prev,
+          events:      [...fresh, ...prev.events].slice(0, 100),
+          lastUpdated: Date.now(),
+          streaming:   true,
+        };
+      });
+      lastSync.current = Date.now();
+    },
+    onConnect:    () => { streamingRef.current = true;  setPartial({ streaming: true }); },
+    onDisconnect: () => { streamingRef.current = false; setPartial({ streaming: false }); },
+    maxRetries: 5,
+  });
+
+  // ── Polling: reliable fallback regardless of SSE state ───────────────────
   useEffect(() => {
     mounted.current = true;
 
-    // If no server-side data was provided, fetch immediately
-    if (initialData.length === 0) {
-      refresh();
-    }
+    if (initialData.length === 0) refresh();
 
-    // Differential sync on interval
+    // Differential sync — still runs even when SSE is active (belt-and-suspenders)
     const poll = setInterval(syncNew, pollInterval);
 
-    // Full refresh on tab focus (catches long idle sessions)
+    // Full refresh on tab focus
     const onFocus = () => { if (document.visibilityState === 'visible') refresh(); };
     document.addEventListener('visibilitychange', onFocus);
 
