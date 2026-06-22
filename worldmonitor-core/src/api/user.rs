@@ -57,7 +57,7 @@ pub async fn get_handler(
             let is_new = user.last_visit.is_none();
 
             let response = UserResponse {
-                user_id: user.id,
+                user_id: user.id.clone(),
                 streak: new_streak,
                 interests: user.get_interests(),
                 countries: user.get_countries(),
@@ -124,7 +124,7 @@ pub async fn post_handler(
             state.cache.delete(&cache_key);
 
             let response = UserResponse {
-                user_id: user.id,
+                user_id: user.id.clone(),
                 streak: user.streak,
                 interests: user.get_interests(),
                 countries: user.get_countries(),

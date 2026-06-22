@@ -339,8 +339,8 @@ export function OnboardingFlow() {
 
   const handleLaunch = () => {
     saveUserPrefs({
-      interests: [...interests],
-      countries: [...regions],
+      interests: Array.from(interests),
+      countries: Array.from(regions),
       tier: 'free',
     });
     markOnboarded();

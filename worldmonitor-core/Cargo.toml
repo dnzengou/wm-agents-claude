@@ -7,21 +7,22 @@ description = "Lean, edge-native OSINT intelligence platform"
 license = "MIT"
 
 [dependencies]
-# Web framework - Axum for standalone, worker for Cloudflare
+# Web framework
 tokio = { version = "1.35", features = ["full"] }
 axum = { version = "0.7", features = ["macros"] }
 tower = { version = "0.4", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors", "fs", "compression-full"] }
+tower-http = { version = "0.5", features = ["cors", "compression-full"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # HTTP client for external APIs
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 # Database - SQLite with sqlx
-sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono"] }
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
@@ -30,7 +31,6 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 
 # Error handling
-thiserror = "1.0"
 anyhow = "1.0"
 
 # Logging
@@ -38,31 +38,23 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Configuration
-config = "0.14"
 dotenvy = "0.15"
 
-# Async utilities
-futures = "0.3"
-async-trait = "0.1"
-
-# Caching (in-memory for standalone, compatible with Edge KV)
+# In-memory cache
 dashmap = "5.5"
 
-# RSS parsing
-rss = "2.0"
+# URL encoding (used in core/mod.rs for GDELT feed URLs)
+urlencoding = "2.1"
 
-# HTML escaping
-html-escape = "0.2"
+# Zero-dependency XML parser for direct RSS/Atom feed ingestion
+roxmltree = "0.19"
 
-# Regex for text processing
-regex = "1.10"
-
-# Compression
-flate2 = "1.0"
+# Kafka-style broadcast: converts tokio broadcast channels into async Streams
+# Used by the SSE /api/stream endpoint
+tokio-stream = { version = "0.1", features = ["sync"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
-mockall = "0.12"
 
 [[bin]]
 name = "worldmonitor"

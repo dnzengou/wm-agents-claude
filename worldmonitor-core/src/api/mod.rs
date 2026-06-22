@@ -6,6 +6,7 @@ pub mod alerts;
 pub mod brief;
 pub mod geo;
 pub mod intelligence;
+pub mod sse;
 pub mod sync;
 pub mod user;
 

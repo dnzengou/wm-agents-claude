@@ -24,9 +24,15 @@ export type IntelEvent = {
   /** 1–10 severity score */
   severity: number;
   headline: string;
-  source: 'gdelt' | 'rss' | 'manual';
+  source: 'gdelt' | 'rss' | 'manual' | 'eonet';
   /** Unix millis */
   timestamp: number;
+  /** Intelligence domain: geopolitical | cyber | energy | climate | wildfire |
+   *  water | natural | nuclear | mining | deforestation | ocean | demographics |
+   *  uninsurability | critical_minerals */
+  domain: string;
+  /** Original article URL (RSS feeds only; undefined for GDELT events). */
+  link?: string;
 };
 
 export type Brief = {
@@ -62,11 +68,12 @@ export type SyncResult = {
 
 async function req<T>(
   path: string,
-  init?: RequestInit & { next?: { revalidate?: number } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  init?: RequestInit & { next?: any },
 ): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-    ...init,
+    ...(init as RequestInit),
   });
 
   if (!res.ok) {
