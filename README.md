@@ -60,3 +60,16 @@ Browser → Vercel (Next.js SSR) → /api/* rewrite → Railway (Rust/Axum)
                                                    SQLite (persistent volume)
                                                    GDELT API + RSS feeds (ingested every 15 min)
 ```
+
+## Distribution surfaces
+
+The deployed PWA at https://worldmonitor-core.vercel.app/ is the canonical artifact. Additional install surfaces wrap that PWA — one Vercel push updates all of them.
+
+| Surface | Path | Ship action |
+|---|---|---|
+| Chrome MV3 extension | `packages/chrome-ext/` | `bash packages/chrome-ext/build.sh` → upload zip to Web Store |
+| NPM SDK | `packages/terminal-sdk/` | `npm publish --access public` (after `npm login`) |
+| Android APK (TWA) | `packages/twa/` | `bubblewrap build` — needs JDK 17 + Android SDK |
+| Desktop (Tauri) | `packages/tauri/` | `npm create tauri-app` per the README |
+
+See [packages/README.md](packages/README.md) for the full distribution philosophy.
