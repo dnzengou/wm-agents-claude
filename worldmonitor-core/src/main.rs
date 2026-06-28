@@ -44,6 +44,10 @@ pub struct AppConfig {
     pub database_url: String,
     pub max_alerts_free: i32,
     // ── Stripe billing ──────────────────────────────────────────────────────
+    /// Publishable key (`pk_live_…` / `pk_test_…`). Public by design — served to
+    /// clients via `GET /api/billing/config` for client-side Stripe.js. Not a
+    /// secret and not used for server-side API calls.
+    pub stripe_publishable_key: String,
     /// Secret API key (`sk_live_…` / `sk_test_…`). Empty disables billing.
     pub stripe_secret_key: String,
     /// Webhook signing secret (`whsec_…`) used to verify incoming events.
@@ -81,6 +85,7 @@ impl AppConfig {
                 .unwrap_or_else(|_| "3".to_string())
                 .parse()
                 .unwrap_or(3),
+            stripe_publishable_key: std::env::var("STRIPE_PUBLISHABLE_KEY").unwrap_or_default(),
             stripe_secret_key: std::env::var("STRIPE_SECRET_KEY").unwrap_or_default(),
             stripe_webhook_secret: std::env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_default(),
             stripe_price_pro: std::env::var("STRIPE_PRICE_PRO").unwrap_or_default(),
@@ -272,6 +277,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/sync", get(sync::handler))
         .route("/api/user", get(user::get_handler).post(user::post_handler))
         // ── Stripe billing ──────────────────────────────────────────────────
+        .route("/api/billing/config", get(billing::config_handler))
         .route("/api/billing/tier", get(billing::tier_handler))
         .route("/api/billing/checkout", post(billing::checkout_handler))
         .route("/api/billing/webhook", post(billing::webhook_handler))

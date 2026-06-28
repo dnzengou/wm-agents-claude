@@ -26,7 +26,7 @@ use tracing::{error, info, warn};
 use crate::{
     models::{
         requests::CheckoutRequest,
-        responses::{CheckoutResponse, ErrorResponse, TierResponse},
+        responses::{BillingConfigResponse, CheckoutResponse, ErrorResponse, TierResponse},
         Tier,
     },
     AppState,
@@ -52,6 +52,19 @@ fn err(status: StatusCode, msg: &str) -> (StatusCode, Json<ErrorResponse>) {
             error: msg.to_string(),
         }),
     )
+}
+
+/// GET /api/billing/config — public, client-side billing config.
+///
+/// Returns the Stripe **publishable** key (safe to expose) and whether billing
+/// is enabled. No auth required. Intended for future client-side Stripe.js
+/// checkout; the current flow redirects to a hosted Payment Link / Checkout
+/// Session and does not require this.
+pub async fn config_handler(State(state): State<Arc<AppState>>) -> Json<BillingConfigResponse> {
+    Json(BillingConfigResponse {
+        publishable_key: state.config.stripe_publishable_key.clone(),
+        billing_enabled: state.config.billing_enabled(),
+    })
 }
 
 /// GET /api/billing/tier — current tier and its limits.

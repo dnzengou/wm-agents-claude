@@ -71,6 +71,7 @@ Three tiers, enforced server-side and gated through Stripe Checkout:
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/api/billing/config` | Public client config — Stripe **publishable** key + `billing_enabled` (for client-side Stripe.js) |
 | `GET` | `/api/billing/tier` | Current tier, alert limit, whether billing is enabled |
 | `POST` | `/api/billing/checkout` | Body `{ "tier": "pro" \| "enterprise" }` → returns a hosted Stripe Checkout `url` |
 | `POST` | `/api/billing/webhook` | Stripe-signed events — promotes on `checkout.session.completed`, demotes on `customer.subscription.deleted` |
