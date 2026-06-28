@@ -20,7 +20,7 @@ mod core;
 mod db;
 mod models;
 
-use api::{alerts, brief, geo, intelligence, sse, sync, user};
+use api::{alerts, billing, brief, geo, intelligence, sse, sync, user};
 use cache::Cache;
 use db::Database;
 use models::IntelEvent;
@@ -43,6 +43,17 @@ pub struct AppConfig {
     pub port: u16,
     pub database_url: String,
     pub max_alerts_free: i32,
+    // ── Stripe billing ──────────────────────────────────────────────────────
+    /// Secret API key (`sk_live_…` / `sk_test_…`). Empty disables billing.
+    pub stripe_secret_key: String,
+    /// Webhook signing secret (`whsec_…`) used to verify incoming events.
+    pub stripe_webhook_secret: String,
+    /// Recurring price id for the Pro plan (`price_…`).
+    pub stripe_price_pro: String,
+    /// Recurring price id for the Enterprise plan (`price_…`).
+    pub stripe_price_enterprise: String,
+    /// Public base URL used to build Checkout success/cancel redirects.
+    pub app_base_url: String,
 }
 
 impl AppConfig {
@@ -60,7 +71,34 @@ impl AppConfig {
                 .unwrap_or_else(|_| "3".to_string())
                 .parse()
                 .unwrap_or(3),
+            stripe_secret_key: std::env::var("STRIPE_SECRET_KEY").unwrap_or_default(),
+            stripe_webhook_secret: std::env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_default(),
+            stripe_price_pro: std::env::var("STRIPE_PRICE_PRO").unwrap_or_default(),
+            stripe_price_enterprise: std::env::var("STRIPE_PRICE_ENTERPRISE").unwrap_or_default(),
+            app_base_url: std::env::var("APP_BASE_URL")
+                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
         })
+    }
+
+    /// Billing is live only when both the API key and webhook secret are set.
+    /// Lets the platform run unchanged on deployments that haven't configured
+    /// Stripe — the checkout endpoint then returns a clean 503.
+    pub fn billing_enabled(&self) -> bool {
+        !self.stripe_secret_key.is_empty() && !self.stripe_webhook_secret.is_empty()
+    }
+
+    /// Resolve the Stripe price id for a paid tier, if configured.
+    pub fn price_for(&self, tier: crate::models::Tier) -> Option<&str> {
+        let id = match tier {
+            crate::models::Tier::Pro => &self.stripe_price_pro,
+            crate::models::Tier::Enterprise => &self.stripe_price_enterprise,
+            crate::models::Tier::Free => return None,
+        };
+        if id.is_empty() {
+            None
+        } else {
+            Some(id.as_str())
+        }
     }
 }
 
@@ -197,6 +235,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/alerts", post(alerts::handler))
         .route("/api/sync", get(sync::handler))
         .route("/api/user", get(user::get_handler).post(user::post_handler))
+        // ── Stripe billing ──────────────────────────────────────────────────
+        .route("/api/billing/tier", get(billing::tier_handler))
+        .route("/api/billing/checkout", post(billing::checkout_handler))
+        .route("/api/billing/webhook", post(billing::webhook_handler))
         .route("/", get(serve_frontend))
         .route("/*path", get(serve_static))
         .layer(cors)

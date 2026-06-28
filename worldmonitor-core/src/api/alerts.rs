@@ -31,33 +31,51 @@ pub async fn handler(
         user_id, request.country
     );
 
-    // Check free tier limit
-    match state.db.count_alerts(user_id).await {
-        Ok(count) => {
-            if count >= state.config.max_alerts_free as i64 {
-                warn!(
-                    "User {} exceeded free tier alert limit ({})",
-                    user_id, state.config.max_alerts_free
-                );
-                return Err((
-                    StatusCode::FORBIDDEN,
-                    Json(ErrorResponse {
-                        error: format!(
-                            "Free tier limit reached ({} alerts max). Upgrade to Pro for unlimited alerts.",
-                            state.config.max_alerts_free
-                        ),
-                    }),
-                ));
-            }
-        }
+    // Tier-aware alert limit: free tier is capped at MAX_ALERTS_FREE,
+    // paid tiers (Pro/Enterprise) get unlimited alerts.
+    let tier = match state.db.get_or_create_user(user_id).await {
+        Ok(user) => user.tier(),
         Err(e) => {
             tracing::error!("Database error: {}", e);
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: "Failed to check alert limit".to_string(),
+                    error: "Failed to load account".to_string(),
                 }),
             ));
+        }
+    };
+
+    if let Some(limit) = tier.max_alerts(state.config.max_alerts_free) {
+        match state.db.count_alerts(user_id).await {
+            Ok(count) => {
+                if count >= limit as i64 {
+                    warn!(
+                        "User {} exceeded {} tier alert limit ({})",
+                        user_id,
+                        tier.as_str(),
+                        limit
+                    );
+                    return Err((
+                        StatusCode::FORBIDDEN,
+                        Json(ErrorResponse {
+                            error: format!(
+                                "Free tier limit reached ({} alerts max). Upgrade to Pro for unlimited alerts.",
+                                limit
+                            ),
+                        }),
+                    ));
+                }
+            }
+            Err(e) => {
+                tracing::error!("Database error: {}", e);
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "Failed to check alert limit".to_string(),
+                    }),
+                ));
+            }
         }
     }
 

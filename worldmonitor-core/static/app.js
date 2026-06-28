@@ -54,10 +54,30 @@ const API = {
     async createAlert(country, threshold = 5) {
         const res = await fetch(`${this.baseUrl}/api/alerts`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
             body: JSON.stringify({ user_id: 'anonymous', country, threshold })
         });
         return res.json();
+    },
+
+    async getTier() {
+        const res = await fetch(`${this.baseUrl}/api/billing/tier`, {
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        if (!res.ok) throw new Error('Failed to get tier');
+        return res.json();
+    },
+
+    // Kick off Stripe Checkout for a paid tier and hand back the hosted URL.
+    async checkout(tier) {
+        const res = await fetch(`${this.baseUrl}/api/billing/checkout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
+            body: JSON.stringify({ tier })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Checkout failed');
+        return data;
     }
 };
 
@@ -430,6 +450,8 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [lastSync, setLastSync] = useState(Date.now());
     const [error, setError] = useState(null);
+    const [tier, setTier] = useState(null);
+    const [upgrading, setUpgrading] = useState(false);
 
     // Initial load
     useEffect(() => {
@@ -447,6 +469,26 @@ function App() {
                 setLoading(false);
             });
     }, []);
+
+    // Load billing tier (separate so a billing outage never blocks the app).
+    // After a successful Stripe redirect (?upgrade=success) this reflects the
+    // freshly-applied tier once the webhook has landed.
+    useEffect(() => {
+        API.getTier().then(setTier).catch(() => {});
+    }, []);
+
+    // Start Stripe Checkout and redirect to the hosted payment page.
+    const handleUpgrade = useCallback(async (plan = 'pro') => {
+        if (upgrading) return;
+        setUpgrading(true);
+        try {
+            const { url } = await API.checkout(plan);
+            window.location.href = url;
+        } catch (err) {
+            alert(err.message || 'Could not start checkout. Please try again.');
+            setUpgrading(false);
+        }
+    }, [upgrading]);
 
     // Periodic sync (every 60 seconds)
     useEffect(() => {
@@ -513,10 +555,22 @@ function App() {
 
     return htmlx`
         <div class="app">
-            <div class="upgrade-banner" onClick=${() => alert('Upgrade to Pro for $9/month\n\n✓ Real-time data\n✓ Unlimited alerts\n✓ 90-day history\n✓ API access')}>
-                Free tier: 3 alerts, 24h delayed data
-                <a href="#" onClick=${e => e.preventDefault()}>Upgrade to Pro →</a>
-            </div>
+            ${(!tier || tier.tier === 'free') ? htmlx`
+                <div class="upgrade-banner" onClick=${() => tier?.billing_enabled !== false && handleUpgrade('pro')}>
+                    Free tier: ${tier?.max_alerts ?? 3} alerts, 24h delayed data
+                    ${tier?.billing_enabled === false ? htmlx`
+                        <span style="margin-left:0.5rem; opacity:0.85;">Pro coming soon</span>
+                    ` : htmlx`
+                        <a href="#" onClick=${e => { e.preventDefault(); handleUpgrade('pro'); }}>
+                            ${upgrading ? 'Redirecting…' : 'Upgrade to Pro ($19/mo) →'}
+                        </a>
+                    `}
+                </div>
+            ` : htmlx`
+                <div class="upgrade-banner" style="cursor:default;">
+                    ${tier.tier === 'enterprise' ? '🏛️ Enterprise' : '⭐ Pro'} plan active — unlimited alerts, full access
+                </div>
+            `}
             
             <header>
                 <h1><span>⚡</span> WorldMonitor Core</h1>

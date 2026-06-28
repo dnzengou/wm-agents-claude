@@ -52,6 +52,13 @@ roxmltree = "0.19"
 # Used by the SSE /api/stream endpoint
 tokio-stream = { version = "0.1", features = ["sync"] }
 
+# Stripe webhook signature verification (HMAC-SHA256 over the raw request body).
+# We call the Stripe REST API directly via reqwest rather than pulling in the
+# heavyweight `stripe` SDK — keeps the binary lean and edge-native.
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 [dev-dependencies]
 tokio-test = "0.4"
 

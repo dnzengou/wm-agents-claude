@@ -1011,9 +1011,11 @@ mod tests {
             calculate_severity("Multiple people killed in bombing attack", "geopolitical"),
             8
         );
+        // "protests" and "tensions" are both MEDIUM signals (base 4 → 5);
+        // neither appears in the HIGH list, so 5 is the correct score.
         assert_eq!(
             calculate_severity("Protests amid rising tensions", "geopolitical"),
-            6
+            5
         );
         assert_eq!(
             calculate_severity("Diplomatic meeting next week", "geopolitical"),
