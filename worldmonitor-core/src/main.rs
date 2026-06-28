@@ -52,9 +52,19 @@ pub struct AppConfig {
     pub stripe_price_pro: String,
     /// Recurring price id for the Enterprise plan (`price_…`).
     pub stripe_price_enterprise: String,
+    /// Hosted Stripe Payment Link for Pro (`https://buy.stripe.com/…`).
+    /// When set, checkout redirects here instead of calling the API — no
+    /// secret key required. The user id is appended as `client_reference_id`.
+    pub stripe_payment_link_pro: String,
+    /// Hosted Stripe Payment Link for Enterprise.
+    pub stripe_payment_link_enterprise: String,
     /// Public base URL used to build Checkout success/cancel redirects.
     pub app_base_url: String,
 }
+
+/// Default hosted Payment Link for the Pro plan. Public, shareable URL (not a
+/// secret) — overridable via `STRIPE_PAYMENT_LINK_PRO`.
+const DEFAULT_PAYMENT_LINK_PRO: &str = "https://buy.stripe.com/6oU14neX647kcaI29Z0oM00";
 
 impl AppConfig {
     fn from_env() -> anyhow::Result<Self> {
@@ -75,16 +85,42 @@ impl AppConfig {
             stripe_webhook_secret: std::env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_default(),
             stripe_price_pro: std::env::var("STRIPE_PRICE_PRO").unwrap_or_default(),
             stripe_price_enterprise: std::env::var("STRIPE_PRICE_ENTERPRISE").unwrap_or_default(),
+            stripe_payment_link_pro: std::env::var("STRIPE_PAYMENT_LINK_PRO")
+                .unwrap_or_else(|_| DEFAULT_PAYMENT_LINK_PRO.to_string()),
+            stripe_payment_link_enterprise: std::env::var("STRIPE_PAYMENT_LINK_ENTERPRISE")
+                .unwrap_or_default(),
             app_base_url: std::env::var("APP_BASE_URL")
                 .unwrap_or_else(|_| "http://localhost:8080".to_string()),
         })
     }
 
-    /// Billing is live only when both the API key and webhook secret are set.
-    /// Lets the platform run unchanged on deployments that haven't configured
-    /// Stripe — the checkout endpoint then returns a clean 503.
+    /// Whether the platform can take a payment at all — either a hosted Payment
+    /// Link or an API secret key is configured. Drives the upgrade CTA in the UI
+    /// and the checkout endpoint's 503 fallback. (Auto-fulfilment additionally
+    /// needs `STRIPE_WEBHOOK_SECRET`; see [`Self::webhooks_enabled`].)
     pub fn billing_enabled(&self) -> bool {
-        !self.stripe_secret_key.is_empty() && !self.stripe_webhook_secret.is_empty()
+        !self.stripe_secret_key.is_empty()
+            || !self.stripe_payment_link_pro.is_empty()
+            || !self.stripe_payment_link_enterprise.is_empty()
+    }
+
+    /// Whether incoming Stripe webhooks can be verified and acted on.
+    pub fn webhooks_enabled(&self) -> bool {
+        !self.stripe_webhook_secret.is_empty()
+    }
+
+    /// Hosted Payment Link for a paid tier, if configured.
+    pub fn payment_link_for(&self, tier: crate::models::Tier) -> Option<&str> {
+        let link = match tier {
+            crate::models::Tier::Pro => &self.stripe_payment_link_pro,
+            crate::models::Tier::Enterprise => &self.stripe_payment_link_enterprise,
+            crate::models::Tier::Free => return None,
+        };
+        if link.is_empty() {
+            None
+        } else {
+            Some(link.as_str())
+        }
     }
 
     /// Resolve the Stripe price id for a paid tier, if configured.
