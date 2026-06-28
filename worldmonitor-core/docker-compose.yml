@@ -11,6 +11,12 @@ services:
       - DATABASE_URL=sqlite:/app/data/worldmonitor.db
       - GROQ_API_KEY=${GROQ_API_KEY}
       - MAX_ALERTS_FREE=3
+      # Stripe billing — optional; leave unset to run without paid tiers.
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - STRIPE_PRICE_PRO=${STRIPE_PRICE_PRO:-}
+      - STRIPE_PRICE_ENTERPRISE=${STRIPE_PRICE_ENTERPRISE:-}
+      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8080}
       - RUST_LOG=info
     volumes:
       - ./data:/app/data

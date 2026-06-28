@@ -35,6 +35,11 @@ GROQ_API_KEY=your_key docker compose up
    - `GROQ_API_KEY` — your Groq API key
    - `DATABASE_URL` — `sqlite:/app/data/worldmonitor.db` (Railway mounts `/app/data` as persistent volume via `railway.toml`)
    - `MAX_ALERTS_FREE` — `3`
+   - **Stripe billing (optional)** — set these to activate paid tiers:
+     - `STRIPE_SECRET_KEY` — `sk_live_…` / `sk_test_…`
+     - `STRIPE_WEBHOOK_SECRET` — `whsec_…` (from the webhook endpoint you point at `/api/billing/webhook`)
+     - `STRIPE_PRICE_PRO` / `STRIPE_PRICE_ENTERPRISE` — recurring price ids
+     - `APP_BASE_URL` — public URL for Checkout success/cancel redirects
 5. Railway auto-deploys on every push to `main`
 
 ### Frontend → Vercel
@@ -51,6 +56,34 @@ GitHub Actions runs on every push and PR:
 - `cargo check` + `cargo clippy` + release build (Rust)
 - `tsc --noEmit` + `next build` (Next.js)
 - Docker image smoke-test (main branch only)
+
+## Price tiers & billing
+
+Three tiers, enforced server-side and gated through Stripe Checkout:
+
+| Tier | Price | Alerts | Notes |
+|---|---|---|---|
+| Free | $0 | `MAX_ALERTS_FREE` (default 3) | Default for every account |
+| Pro | $19/mo | Unlimited | Subscription |
+| Enterprise | $99/mo | Unlimited | Subscription + API access |
+
+**Endpoints** (backend, under `/api/billing`):
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/billing/tier` | Current tier, alert limit, whether billing is enabled |
+| `POST` | `/api/billing/checkout` | Body `{ "tier": "pro" \| "enterprise" }` → returns a hosted Stripe Checkout `url` |
+| `POST` | `/api/billing/webhook` | Stripe-signed events — promotes on `checkout.session.completed`, demotes on `customer.subscription.deleted` |
+
+The user's tier is identified by the `X-User-Id` header and persisted in the
+`users.tier` column. Webhook authenticity is verified with HMAC-SHA256 over the
+raw request body (`STRIPE_WEBHOOK_SECRET`). When `STRIPE_SECRET_KEY` /
+`STRIPE_WEBHOOK_SECRET` are unset the platform runs unchanged — checkout returns
+`503` and the UI hides the upgrade CTA.
+
+In the Stripe dashboard, add a webhook endpoint pointing at
+`https://<your-backend>/api/billing/webhook` subscribed to
+`checkout.session.completed` and `customer.subscription.deleted`.
 
 ## Architecture
 

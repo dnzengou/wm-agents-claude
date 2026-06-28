@@ -3,6 +3,7 @@ use axum::{http::StatusCode, response::Json};
 use crate::models::responses::ErrorResponse;
 
 pub mod alerts;
+pub mod billing;
 pub mod brief;
 pub mod geo;
 pub mod intelligence;

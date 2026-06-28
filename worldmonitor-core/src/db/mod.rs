@@ -72,7 +72,7 @@ impl Database {
             .execute(&self.pool)
             .await?;
 
-        // Create users table
+        // Create users table (includes monetization columns from v13)
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS users (
@@ -82,9 +82,25 @@ impl Database {
                 alert_threshold INTEGER DEFAULT 5,
                 streak INTEGER DEFAULT 0,
                 last_visit DATETIME,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                tier TEXT NOT NULL DEFAULT 'free',
+                stripe_customer_id TEXT
             )
             "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Safe migrations for existing DBs — ignore errors when columns already exist.
+        let _ = sqlx::query("ALTER TABLE users ADD COLUMN tier TEXT NOT NULL DEFAULT 'free'")
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("ALTER TABLE users ADD COLUMN stripe_customer_id TEXT")
+            .execute(&self.pool)
+            .await;
+        // Map a Stripe customer back to its user when a subscription is cancelled.
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id)",
         )
         .execute(&self.pool)
         .await?;
@@ -275,7 +291,7 @@ impl Database {
     pub async fn get_or_create_user(&self, user_id: &str) -> anyhow::Result<User> {
         let user: Option<User> = sqlx::query_as(
             r#"
-            SELECT id, interests, countries, alert_threshold, streak, last_visit, created_at
+            SELECT id, interests, countries, alert_threshold, streak, last_visit, created_at, tier, stripe_customer_id
             FROM users WHERE id = ?
             "#,
         )
@@ -289,8 +305,8 @@ impl Database {
                 let new_user = User::new(user_id);
                 sqlx::query(
                     r#"
-                    INSERT INTO users (id, interests, countries, alert_threshold, streak, last_visit, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO users (id, interests, countries, alert_threshold, streak, last_visit, created_at, tier, stripe_customer_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     "#,
                 )
                 .bind(&new_user.id)
@@ -300,6 +316,8 @@ impl Database {
                 .bind(new_user.streak)
                 .bind(new_user.last_visit)
                 .bind(new_user.created_at)
+                .bind(&new_user.tier)
+                .bind(&new_user.stripe_customer_id)
                 .execute(&self.pool)
                 .await?;
                 Ok(new_user)
@@ -343,6 +361,60 @@ impl Database {
         .await?;
 
         Ok(())
+    }
+
+    // ==================== Billing / Tier Operations ====================
+
+    /// Promote/demote a user to a tier and record their Stripe customer id.
+    /// Creates the user row first if it doesn't exist yet (checkout can fire
+    /// for an id we haven't persisted preferences for).
+    pub async fn set_user_tier(
+        &self,
+        user_id: &str,
+        tier: &str,
+        stripe_customer_id: Option<&str>,
+    ) -> anyhow::Result<()> {
+        // Ensure the row exists so the UPDATE always lands.
+        self.get_or_create_user(user_id).await?;
+
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET tier = ?,
+                stripe_customer_id = COALESCE(?, stripe_customer_id)
+            WHERE id = ?
+            "#,
+        )
+        .bind(tier)
+        .bind(stripe_customer_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Reset whichever user owns this Stripe customer back to the free tier.
+    /// Returns the affected user id (if any) for logging. Used by the
+    /// `customer.subscription.deleted` webhook.
+    pub async fn downgrade_by_stripe_customer(
+        &self,
+        stripe_customer_id: &str,
+    ) -> anyhow::Result<Option<String>> {
+        let user_id: Option<(String,)> =
+            sqlx::query_as("SELECT id FROM users WHERE stripe_customer_id = ?")
+                .bind(stripe_customer_id)
+                .fetch_optional(&self.pool)
+                .await?;
+
+        if let Some((id,)) = &user_id {
+            sqlx::query("UPDATE users SET tier = 'free' WHERE id = ?")
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+        }
+
+        Ok(user_id.map(|(id,)| id))
     }
 
     // ==================== Alert Operations ====================
@@ -475,5 +547,37 @@ mod tests {
         let events = db.get_recent_events(10).await.unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].country, "Ukraine");
+    }
+
+    #[tokio::test]
+    async fn test_tier_upgrade_and_downgrade() {
+        let db = Database::new("sqlite::memory:").await.unwrap();
+        db.run_migrations().await.unwrap();
+
+        // New users start on the free tier.
+        let user = db.get_or_create_user("u1").await.unwrap();
+        assert_eq!(user.tier(), crate::models::Tier::Free);
+        assert!(user.stripe_customer_id.is_none());
+
+        // A completed checkout promotes them and records the Stripe customer.
+        db.set_user_tier("u1", "pro", Some("cus_123"))
+            .await
+            .unwrap();
+        let user = db.get_or_create_user("u1").await.unwrap();
+        assert_eq!(user.tier(), crate::models::Tier::Pro);
+        assert_eq!(user.stripe_customer_id.as_deref(), Some("cus_123"));
+
+        // A subscription cancellation maps the customer back to free.
+        let downgraded = db.downgrade_by_stripe_customer("cus_123").await.unwrap();
+        assert_eq!(downgraded.as_deref(), Some("u1"));
+        let user = db.get_or_create_user("u1").await.unwrap();
+        assert_eq!(user.tier(), crate::models::Tier::Free);
+
+        // Unknown customer is a no-op.
+        let none = db
+            .downgrade_by_stripe_customer("cus_missing")
+            .await
+            .unwrap();
+        assert!(none.is_none());
     }
 }

@@ -67,6 +67,57 @@ impl IntelEvent {
     }
 }
 
+/// Subscription tier. Drives every monetization gate in the platform.
+///
+/// Persisted as the lowercase string in `users.tier`; defaults to `Free`.
+/// A user is promoted to `Pro`/`Enterprise` by a verified Stripe
+/// `checkout.session.completed` webhook and demoted back to `Free` when the
+/// subscription is cancelled (`customer.subscription.deleted`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tier {
+    #[default]
+    Free,
+    Pro,
+    Enterprise,
+}
+
+impl Tier {
+    /// Stable wire/DB representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Tier::Free => "free",
+            Tier::Pro => "pro",
+            Tier::Enterprise => "enterprise",
+        }
+    }
+
+    /// Parse from the DB/string form. Unknown values fall back to `Free` so a
+    /// malformed row can never silently grant paid access.
+    pub fn from_str(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "pro" => Tier::Pro,
+            "enterprise" => Tier::Enterprise,
+            _ => Tier::Free,
+        }
+    }
+
+    /// Paid tiers unlock the gated features (unlimited alerts, history, API).
+    pub fn is_paid(&self) -> bool {
+        !matches!(self, Tier::Free)
+    }
+
+    /// Maximum number of alert subscriptions allowed.
+    /// `None` means unlimited; `Some(n)` caps the free tier at the configured
+    /// `MAX_ALERTS_FREE` value passed in.
+    pub fn max_alerts(&self, free_limit: i32) -> Option<i32> {
+        match self {
+            Tier::Free => Some(free_limit),
+            Tier::Pro | Tier::Enterprise => None,
+        }
+    }
+}
+
 /// User preferences and state
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
@@ -77,6 +128,16 @@ pub struct User {
     pub streak: i32,
     pub last_visit: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
+    /// Subscription tier as stored in the DB: "free" | "pro" | "enterprise".
+    #[serde(default = "default_tier")]
+    pub tier: String,
+    /// Stripe customer id once the user has gone through checkout. Lets the
+    /// subscription-cancelled webhook map back to the right account.
+    pub stripe_customer_id: Option<String>,
+}
+
+fn default_tier() -> String {
+    "free".to_string()
 }
 
 impl User {
@@ -89,7 +150,14 @@ impl User {
             streak: 0,
             last_visit: Some(Utc::now()),
             created_at: Some(Utc::now()),
+            tier: "free".to_string(),
+            stripe_customer_id: None,
         }
+    }
+
+    /// Typed view of the persisted `tier` string.
+    pub fn tier(&self) -> Tier {
+        Tier::from_str(&self.tier)
     }
 
     pub fn get_interests(&self) -> Vec<String> {
@@ -608,6 +676,13 @@ pub mod requests {
     pub struct SyncRequest {
         pub since: i64,
     }
+
+    /// POST /api/billing/checkout — which paid tier the user wants to buy.
+    #[derive(Debug, Deserialize)]
+    pub struct CheckoutRequest {
+        /// "pro" | "enterprise"
+        pub tier: String,
+    }
 }
 
 pub mod responses {
@@ -633,5 +708,25 @@ pub mod responses {
         pub countries: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub is_new: Option<bool>,
+        /// Current subscription tier: "free" | "pro" | "enterprise".
+        pub tier: String,
+    }
+
+    /// POST /api/billing/checkout — hosted Stripe Checkout URL to redirect to.
+    #[derive(Debug, Serialize)]
+    pub struct CheckoutResponse {
+        pub url: String,
+    }
+
+    /// GET /api/billing/tier — current tier and what it unlocks.
+    #[derive(Debug, Serialize)]
+    pub struct TierResponse {
+        pub tier: String,
+        /// `null` when unlimited (paid tiers).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub max_alerts: Option<i32>,
+        /// Whether Stripe billing is wired up on this deployment. The frontend
+        /// hides the upgrade CTA when this is false.
+        pub billing_enabled: bool,
     }
 }

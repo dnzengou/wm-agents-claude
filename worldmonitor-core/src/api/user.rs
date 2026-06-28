@@ -65,6 +65,7 @@ pub async fn get_handler(
                 interests: user.get_interests(),
                 countries: user.get_countries(),
                 is_new: if is_new { Some(true) } else { None },
+                tier: user.tier.clone(),
             };
 
             // Cache the response
@@ -134,6 +135,7 @@ pub async fn post_handler(
                 interests: user.get_interests(),
                 countries: user.get_countries(),
                 is_new: None,
+                tier: user.tier.clone(),
             };
 
             Ok(Json(response))
