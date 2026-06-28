@@ -26,7 +26,7 @@ use tracing::{error, info, warn};
 use crate::{
     models::{
         requests::CheckoutRequest,
-        responses::{CheckoutResponse, ErrorResponse, TierResponse},
+        responses::{BillingConfigResponse, CheckoutResponse, ErrorResponse, TierResponse},
         Tier,
     },
     AppState,
@@ -52,6 +52,19 @@ fn err(status: StatusCode, msg: &str) -> (StatusCode, Json<ErrorResponse>) {
             error: msg.to_string(),
         }),
     )
+}
+
+/// GET /api/billing/config — public, client-side billing config.
+///
+/// Returns the Stripe **publishable** key (safe to expose) and whether billing
+/// is enabled. No auth required. Intended for future client-side Stripe.js
+/// checkout; the current flow redirects to a hosted Payment Link / Checkout
+/// Session and does not require this.
+pub async fn config_handler(State(state): State<Arc<AppState>>) -> Json<BillingConfigResponse> {
+    Json(BillingConfigResponse {
+        publishable_key: state.config.stripe_publishable_key.clone(),
+        billing_enabled: state.config.billing_enabled(),
+    })
 }
 
 /// GET /api/billing/tier — current tier and its limits.
@@ -96,6 +109,34 @@ pub async fn checkout_handler(
         return Err(err(
             StatusCode::BAD_REQUEST,
             "Choose a paid tier: 'pro' or 'enterprise'",
+        ));
+    }
+
+    // Fast path: a hosted Stripe Payment Link is configured for this tier.
+    // Redirect straight to it with the user id as `client_reference_id` so the
+    // `checkout.session.completed` webhook can map the payment back to the
+    // account. No secret key needed.
+    if let Some(link) = state.config.payment_link_for(tier) {
+        let sep = if link.contains('?') { '&' } else { '?' };
+        let url = format!(
+            "{}{}client_reference_id={}",
+            link,
+            sep,
+            urlencoding::encode(&user_id)
+        );
+        info!(
+            "Redirecting user={} to Stripe Payment Link for tier={}",
+            user_id,
+            tier.as_str()
+        );
+        return Ok(Json(CheckoutResponse { url }));
+    }
+
+    // Otherwise create a Checkout Session via the API (needs the secret key).
+    if state.config.stripe_secret_key.is_empty() {
+        return Err(err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Selected plan is not available right now",
         ));
     }
 
@@ -193,10 +234,10 @@ pub async fn webhook_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
-    if !state.config.billing_enabled() {
+    if !state.config.webhooks_enabled() {
         return Err(err(
             StatusCode::SERVICE_UNAVAILABLE,
-            "Billing is not configured on this deployment",
+            "Webhooks are not configured on this deployment",
         ));
     }
 
