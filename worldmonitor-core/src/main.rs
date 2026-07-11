@@ -10,6 +10,7 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info, warn};
@@ -148,7 +149,7 @@ impl AppConfig {
 async fn health() -> axum::Json<serde_json::Value> {
     axum::Json(serde_json::json!({
         "status": "ok",
-        "version": "0.2.0",
+        "version": env!("CARGO_PKG_VERSION"),
         "timestamp": chrono::Utc::now().timestamp_millis()
     }))
 }
@@ -233,7 +234,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    info!("Starting WorldMonitor Core v0.2.0");
+    info!("Starting WorldMonitor Core v{}", env!("CARGO_PKG_VERSION"));
 
     let config = AppConfig::from_env()?;
     info!("Config: port={}, db={}", config.port, config.database_url);
@@ -285,6 +286,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/*path", get(serve_static))
         .layer(cors)
         .layer(CompressionLayer::new())
+        // Outermost layer: a panic in any handler becomes a 500 instead of
+        // crashing the whole server. Added last → wraps everything above.
+        .layer(CatchPanicLayer::new())
         .with_state(Arc::clone(&state));
 
     let port = state.config.port;

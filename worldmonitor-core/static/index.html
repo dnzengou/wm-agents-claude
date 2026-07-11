@@ -62,6 +62,30 @@
         }
         .upgrade-banner:hover { opacity: 0.95; }
         .upgrade-banner a { color: white; text-decoration: underline; margin-left: 0.5rem; }
+
+        /* Post-checkout notice */
+        .notice {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: white;
+        }
+        .notice-success { background: linear-gradient(135deg, #059669 0%, #047857 100%); }
+        .notice-info { background: var(--bg-secondary); color: var(--text-secondary); }
+        .notice-close {
+            background: transparent;
+            border: none;
+            color: inherit;
+            font-size: 1.1rem;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0.8;
+        }
+        .notice-close:hover { opacity: 1; }
         
         /* Header */
         header {

@@ -1,6 +1,6 @@
 [package]
 name = "worldmonitor-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["WorldMonitor Team"]
 description = "Lean, edge-native OSINT intelligence platform"
@@ -10,8 +10,7 @@ license = "MIT"
 # Web framework
 tokio = { version = "1.35", features = ["full"] }
 axum = { version = "0.7", features = ["macros"] }
-tower = { version = "0.4", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors", "compression-full"] }
+tower-http = { version = "0.5", features = ["cors", "compression-full", "catch-panic"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -71,4 +70,6 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+# NOTE: intentionally NOT `panic = "abort"`. Unwinding lets tower-http's
+# CatchPanicLayer turn a panicking request handler into a 500 instead of taking
+# the whole server down — removing a single point of failure in production.

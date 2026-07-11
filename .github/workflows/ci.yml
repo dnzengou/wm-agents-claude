@@ -15,12 +15,10 @@ jobs:
   backend:
     name: Backend (Rust)
     runs-on: ubuntu-latest
-    # Only run when backend files change
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'worldmonitor-core') ||
-      contains(github.event.pull_request.changed_files, 'Dockerfile') ||
-      contains(github.event.pull_request.changed_files, 'railway.toml')
+    # Runs on every push and PR. (The previous `changed_files` path guard was a
+    # no-op — that field is a file *count*, so the job was silently skipped on
+    # all PRs. Always-run is dependency-free and guarantees the backend is
+    # validated before merge; rust-cache keeps it fast.)
     defaults:
       run:
         working-directory: worldmonitor-core
