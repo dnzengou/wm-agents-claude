@@ -14,12 +14,22 @@ pub struct IntelEvent {
     pub timestamp: i64,
     pub created_at: Option<DateTime<Utc>>,
     /// Intelligence domain: geopolitical | cyber | energy | climate | wildfire |
-    /// water | natural | nuclear | mining | deforestation | ocean | demographics
+    /// water | natural | nuclear | mining | deforestation | ocean | demographics |
+    /// uninsurability | critical_minerals
     pub domain: String,
+    /// Original article URL (RSS feeds only; None for GDELT events).
+    pub link: Option<String>,
 }
 
 impl IntelEvent {
-    pub fn new(country: &str, lat: f64, lon: f64, severity: i32, headline: &str, source: &str) -> Self {
+    pub fn new(
+        country: &str,
+        lat: f64,
+        lon: f64,
+        severity: i32,
+        headline: &str,
+        source: &str,
+    ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             country: country.to_string(),
@@ -31,6 +41,7 @@ impl IntelEvent {
             timestamp: Utc::now().timestamp_millis(),
             created_at: Some(Utc::now()),
             domain: "geopolitical".to_string(),
+            link: None,
         }
     }
 
@@ -40,9 +51,70 @@ impl IntelEvent {
         self
     }
 
+    /// Builder: set source article URL.
+    pub fn with_link(mut self, link: Option<String>) -> Self {
+        self.link = link;
+        self
+    }
+
     /// Get grid key for deduplication (0.1 degree precision)
     pub fn grid_key(&self) -> String {
-        format!("{},{}", (self.lat * 10.0).round() as i32, (self.lon * 10.0).round() as i32)
+        format!(
+            "{},{}",
+            (self.lat * 10.0).round() as i32,
+            (self.lon * 10.0).round() as i32
+        )
+    }
+}
+
+/// Subscription tier. Drives every monetization gate in the platform.
+///
+/// Persisted as the lowercase string in `users.tier`; defaults to `Free`.
+/// A user is promoted to `Pro`/`Enterprise` by a verified Stripe
+/// `checkout.session.completed` webhook and demoted back to `Free` when the
+/// subscription is cancelled (`customer.subscription.deleted`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tier {
+    #[default]
+    Free,
+    Pro,
+    Enterprise,
+}
+
+impl Tier {
+    /// Stable wire/DB representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Tier::Free => "free",
+            Tier::Pro => "pro",
+            Tier::Enterprise => "enterprise",
+        }
+    }
+
+    /// Parse from the DB/string form. Unknown values fall back to `Free` so a
+    /// malformed row can never silently grant paid access.
+    pub fn from_str(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "pro" => Tier::Pro,
+            "enterprise" => Tier::Enterprise,
+            _ => Tier::Free,
+        }
+    }
+
+    /// Paid tiers unlock the gated features (unlimited alerts, history, API).
+    pub fn is_paid(&self) -> bool {
+        !matches!(self, Tier::Free)
+    }
+
+    /// Maximum number of alert subscriptions allowed.
+    /// `None` means unlimited; `Some(n)` caps the free tier at the configured
+    /// `MAX_ALERTS_FREE` value passed in.
+    pub fn max_alerts(&self, free_limit: i32) -> Option<i32> {
+        match self {
+            Tier::Free => Some(free_limit),
+            Tier::Pro | Tier::Enterprise => None,
+        }
     }
 }
 
@@ -56,6 +128,16 @@ pub struct User {
     pub streak: i32,
     pub last_visit: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
+    /// Subscription tier as stored in the DB: "free" | "pro" | "enterprise".
+    #[serde(default = "default_tier")]
+    pub tier: String,
+    /// Stripe customer id once the user has gone through checkout. Lets the
+    /// subscription-cancelled webhook map back to the right account.
+    pub stripe_customer_id: Option<String>,
+}
+
+fn default_tier() -> String {
+    "free".to_string()
 }
 
 impl User {
@@ -68,7 +150,14 @@ impl User {
             streak: 0,
             last_visit: Some(Utc::now()),
             created_at: Some(Utc::now()),
+            tier: "free".to_string(),
+            stripe_customer_id: None,
         }
+    }
+
+    /// Typed view of the persisted `tier` string.
+    pub fn tier(&self) -> Tier {
+        Tier::from_str(&self.tier)
     }
 
     pub fn get_interests(&self) -> Vec<String> {
@@ -179,18 +268,21 @@ impl GeoJson {
     pub fn from_events(events: &[IntelEvent]) -> Self {
         Self {
             geo_type: "FeatureCollection".to_string(),
-            features: events.iter().map(|e| GeoFeature {
-                feature_type: "Feature".to_string(),
-                geometry: GeoGeometry {
-                    geometry_type: "Point".to_string(),
-                    coordinates: vec![e.lon, e.lat],
-                },
-                properties: GeoProperties {
-                    country: e.country.clone(),
-                    severity: e.severity,
-                    headline: e.headline.clone(),
-                },
-            }).collect(),
+            features: events
+                .iter()
+                .map(|e| GeoFeature {
+                    feature_type: "Feature".to_string(),
+                    geometry: GeoGeometry {
+                        geometry_type: "Point".to_string(),
+                        coordinates: vec![e.lon, e.lat],
+                    },
+                    properties: GeoProperties {
+                        country: e.country.clone(),
+                        severity: e.severity,
+                        headline: e.headline.clone(),
+                    },
+                })
+                .collect(),
         }
     }
 }
@@ -320,7 +412,10 @@ impl CountryCoords {
             ("Antigua and Barbuda", (17.0608, -61.7964)),
             ("Saint Kitts and Nevis", (17.3578, -62.7820)),
             ("Dominica", (15.4150, -61.3710)),
-        ].iter().cloned().collect();
+        ]
+        .iter()
+        .cloned()
+        .collect();
 
         coords.get(country).copied()
     }
@@ -333,44 +428,171 @@ impl CountryCoords {
     /// most-prominent subject of an article is always first.
     pub fn extract_from_text(text: &str) -> Vec<String> {
         const COUNTRIES: &[&str] = &[
-            "Ukraine", "Russia", "Israel", "Gaza", "China", "Taiwan", "Iran", "Syria",
-            "United States", "United Kingdom", "Germany", "France", "Turkey", "Saudi Arabia",
-            "India", "Pakistan", "North Korea", "South Korea", "Japan", "Australia",
-            "Brazil", "Mexico", "Canada", "Egypt", "South Africa", "Nigeria", "Ethiopia",
-            "Venezuela", "Colombia", "Argentina", "Poland", "Italy", "Spain", "Netherlands",
-            "Belgium", "Sweden", "Norway", "Denmark", "Finland", "Austria", "Switzerland",
-            "Czech Republic", "Hungary", "Romania", "Bulgaria", "Greece", "Portugal",
-            "Ireland", "New Zealand", "Singapore", "Malaysia", "Indonesia", "Thailand",
-            "Vietnam", "Philippines", "Bangladesh", "Myanmar", "Afghanistan", "Iraq",
-            "Lebanon", "Jordan", "Yemen", "Oman", "Qatar", "Kuwait", "Bahrain",
-            "United Arab Emirates", "Morocco", "Algeria", "Tunisia", "Libya", "Sudan",
-            "Somalia", "Kenya", "Tanzania", "Uganda", "Rwanda", "Ghana", "Senegal",
-            "Mali", "Chad", "Angola", "Zimbabwe", "Zambia", "Mozambique", "Madagascar",
-            "Cameroon", "Ivory Coast", "Niger", "Burkina Faso", "Guinea", "Malawi",
-            "Bolivia", "Paraguay", "Uruguay", "Chile", "Peru", "Ecuador", "Guyana",
-            "Suriname", "Panama", "Costa Rica", "Nicaragua", "Honduras", "Guatemala",
-            "El Salvador", "Belize", "Cuba", "Haiti", "Dominican Republic", "Jamaica",
-            "Trinidad and Tobago", "Barbados", "Saint Lucia", "Grenada", "Saint Vincent",
-            "Antigua and Barbuda", "Saint Kitts and Nevis", "Dominica",
+            "Ukraine",
+            "Russia",
+            "Israel",
+            "Gaza",
+            "China",
+            "Taiwan",
+            "Iran",
+            "Syria",
+            "United States",
+            "United Kingdom",
+            "Germany",
+            "France",
+            "Turkey",
+            "Saudi Arabia",
+            "India",
+            "Pakistan",
+            "North Korea",
+            "South Korea",
+            "Japan",
+            "Australia",
+            "Brazil",
+            "Mexico",
+            "Canada",
+            "Egypt",
+            "South Africa",
+            "Nigeria",
+            "Ethiopia",
+            "Venezuela",
+            "Colombia",
+            "Argentina",
+            "Poland",
+            "Italy",
+            "Spain",
+            "Netherlands",
+            "Belgium",
+            "Sweden",
+            "Norway",
+            "Denmark",
+            "Finland",
+            "Austria",
+            "Switzerland",
+            "Czech Republic",
+            "Hungary",
+            "Romania",
+            "Bulgaria",
+            "Greece",
+            "Portugal",
+            "Ireland",
+            "New Zealand",
+            "Singapore",
+            "Malaysia",
+            "Indonesia",
+            "Thailand",
+            "Vietnam",
+            "Philippines",
+            "Bangladesh",
+            "Myanmar",
+            "Afghanistan",
+            "Iraq",
+            "Lebanon",
+            "Jordan",
+            "Yemen",
+            "Oman",
+            "Qatar",
+            "Kuwait",
+            "Bahrain",
+            "United Arab Emirates",
+            "Morocco",
+            "Algeria",
+            "Tunisia",
+            "Libya",
+            "Sudan",
+            "Somalia",
+            "Kenya",
+            "Tanzania",
+            "Uganda",
+            "Rwanda",
+            "Ghana",
+            "Senegal",
+            "Mali",
+            "Chad",
+            "Angola",
+            "Zimbabwe",
+            "Zambia",
+            "Mozambique",
+            "Madagascar",
+            "Cameroon",
+            "Ivory Coast",
+            "Niger",
+            "Burkina Faso",
+            "Guinea",
+            "Malawi",
+            "Bolivia",
+            "Paraguay",
+            "Uruguay",
+            "Chile",
+            "Peru",
+            "Ecuador",
+            "Guyana",
+            "Suriname",
+            "Panama",
+            "Costa Rica",
+            "Nicaragua",
+            "Honduras",
+            "Guatemala",
+            "El Salvador",
+            "Belize",
+            "Cuba",
+            "Haiti",
+            "Dominican Republic",
+            "Jamaica",
+            "Trinidad and Tobago",
+            "Barbados",
+            "Saint Lucia",
+            "Grenada",
+            "Saint Vincent",
+            "Antigua and Barbuda",
+            "Saint Kitts and Nevis",
+            "Dominica",
             // US states — critical for wildfire, hurricane, flood geo-tagging
-            "California", "Texas", "Florida", "New York", "Arizona", "Oregon",
-            "Washington", "Colorado", "Nevada", "Montana", "Wyoming", "Idaho",
-            "New Mexico", "Louisiana", "Georgia", "North Carolina", "South Carolina",
-            "Virginia", "Michigan", "Minnesota", "Wisconsin",
+            "California",
+            "Texas",
+            "Florida",
+            "New York",
+            "Arizona",
+            "Oregon",
+            "Washington",
+            "Colorado",
+            "Nevada",
+            "Montana",
+            "Wyoming",
+            "Idaho",
+            "New Mexico",
+            "Louisiana",
+            "Georgia",
+            "North Carolina",
+            "South Carolina",
+            "Virginia",
+            "Michigan",
+            "Minnesota",
+            "Wisconsin",
         ];
 
         // Map US state names to their country for coordinate lookup
         const STATE_COUNTRY: &[(&str, &str)] = &[
-            ("California", "United States"), ("Texas", "United States"),
-            ("Florida", "United States"), ("New York", "United States"),
-            ("Arizona", "United States"), ("Oregon", "United States"),
-            ("Washington", "United States"), ("Colorado", "United States"),
-            ("Nevada", "United States"), ("Montana", "United States"),
-            ("Wyoming", "United States"), ("Idaho", "United States"),
-            ("New Mexico", "United States"), ("Louisiana", "United States"),
-            ("Georgia", "United States"), ("North Carolina", "United States"),
-            ("South Carolina", "United States"), ("Virginia", "United States"),
-            ("Michigan", "United States"), ("Minnesota", "United States"),
+            ("California", "United States"),
+            ("Texas", "United States"),
+            ("Florida", "United States"),
+            ("New York", "United States"),
+            ("Arizona", "United States"),
+            ("Oregon", "United States"),
+            ("Washington", "United States"),
+            ("Colorado", "United States"),
+            ("Nevada", "United States"),
+            ("Montana", "United States"),
+            ("Wyoming", "United States"),
+            ("Idaho", "United States"),
+            ("New Mexico", "United States"),
+            ("Louisiana", "United States"),
+            ("Georgia", "United States"),
+            ("North Carolina", "United States"),
+            ("South Carolina", "United States"),
+            ("Virginia", "United States"),
+            ("Michigan", "United States"),
+            ("Minnesota", "United States"),
             ("Wisconsin", "United States"),
         ];
 
@@ -454,6 +676,13 @@ pub mod requests {
     pub struct SyncRequest {
         pub since: i64,
     }
+
+    /// POST /api/billing/checkout — which paid tier the user wants to buy.
+    #[derive(Debug, Deserialize)]
+    pub struct CheckoutRequest {
+        /// "pro" | "enterprise"
+        pub tier: String,
+    }
 }
 
 pub mod responses {
@@ -479,5 +708,34 @@ pub mod responses {
         pub countries: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub is_new: Option<bool>,
+        /// Current subscription tier: "free" | "pro" | "enterprise".
+        pub tier: String,
+    }
+
+    /// POST /api/billing/checkout — hosted Stripe Checkout URL to redirect to.
+    #[derive(Debug, Serialize)]
+    pub struct CheckoutResponse {
+        pub url: String,
+    }
+
+    /// GET /api/billing/config — public client-side billing config. The
+    /// publishable key is safe to expose; it enables future client-side
+    /// Stripe.js flows.
+    #[derive(Debug, Serialize)]
+    pub struct BillingConfigResponse {
+        pub publishable_key: String,
+        pub billing_enabled: bool,
+    }
+
+    /// GET /api/billing/tier — current tier and what it unlocks.
+    #[derive(Debug, Serialize)]
+    pub struct TierResponse {
+        pub tier: String,
+        /// `null` when unlimited (paid tiers).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub max_alerts: Option<i32>,
+        /// Whether Stripe billing is wired up on this deployment. The frontend
+        /// hides the upgrade CTA when this is false.
+        pub billing_enabled: bool,
     }
 }

@@ -107,11 +107,7 @@ impl Cache {
     /// Get cache statistics
     pub fn stats(&self) -> CacheStats {
         let total = self.data.len();
-        let expired = self
-            .data
-            .iter()
-            .filter(|e| e.value().is_expired())
-            .count();
+        let expired = self.data.iter().filter(|e| e.value().is_expired()).count();
 
         CacheStats {
             total_entries: total,
@@ -200,10 +196,10 @@ mod tests {
     #[test]
     fn test_cache_basic() {
         let cache = Cache::new();
-        
+
         cache.put("test", vec![1, 2, 3]);
         assert_eq!(cache.get("test"), Some(vec![1, 2, 3]));
-        
+
         cache.delete("test");
         assert_eq!(cache.get("test"), None);
     }
@@ -212,7 +208,7 @@ mod tests {
     fn test_cache_json() {
         let cache = Cache::new();
         let data = vec!["hello", "world"];
-        
+
         cache.put_json("json_test", &data);
         let retrieved: Vec<String> = cache.get_json("json_test").unwrap();
         assert_eq!(retrieved, vec!["hello", "world"]);
@@ -222,7 +218,7 @@ mod tests {
     fn test_cache_expiration() {
         let cache = Cache::with_ttl(0); // 0 second TTL
         cache.put("expire_test", vec![1, 2, 3]);
-        
+
         // Should be expired immediately
         std::thread::sleep(Duration::from_millis(10));
         assert_eq!(cache.get("expire_test"), None);

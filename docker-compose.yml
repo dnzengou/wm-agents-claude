@@ -18,6 +18,16 @@ services:
       DATABASE_URL: sqlite:/app/data/worldmonitor.db
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       MAX_ALERTS_FREE: 3
+      # Stripe billing — optional; leave unset to run without paid tiers.
+      # Pro defaults to a built-in hosted Payment Link; override as needed.
+      STRIPE_PAYMENT_LINK_PRO: ${STRIPE_PAYMENT_LINK_PRO:-}
+      STRIPE_PAYMENT_LINK_ENTERPRISE: ${STRIPE_PAYMENT_LINK_ENTERPRISE:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
+      STRIPE_PRICE_ENTERPRISE: ${STRIPE_PRICE_ENTERPRISE:-}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       RUST_LOG: info
     volumes:
       - wm-db:/app/data
