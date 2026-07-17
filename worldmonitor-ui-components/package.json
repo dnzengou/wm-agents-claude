@@ -1,6 +1,6 @@
 {
   "name": "worldmonitor-ui",
-  "version": "2.6.5",
+  "version": "2.6.6",
   "description": "WorldMonitor OSINT Dashboard - Palantir Apollo/Chainalysis-inspired UI",
   "private": true,
   "scripts": {
