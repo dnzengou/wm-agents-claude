@@ -10,7 +10,10 @@ use tracing::{debug, info};
 
 use crate::{
     cache::{strategies::*, Cache},
-    models::{requests::UserUpdateRequest, responses::{ErrorResponse, UserResponse}},
+    models::{
+        requests::UserUpdateRequest,
+        responses::{ErrorResponse, UserResponse},
+    },
     AppState,
 };
 
@@ -62,10 +65,13 @@ pub async fn get_handler(
                 interests: user.get_interests(),
                 countries: user.get_countries(),
                 is_new: if is_new { Some(true) } else { None },
+                tier: user.tier.clone(),
             };
 
             // Cache the response
-            state.cache.put_json_with_ttl(&cache_key, &response, USER_TTL);
+            state
+                .cache
+                .put_json_with_ttl(&cache_key, &response, USER_TTL);
 
             Ok(Json(response))
         }
@@ -129,6 +135,7 @@ pub async fn post_handler(
                 interests: user.get_interests(),
                 countries: user.get_countries(),
                 is_new: None,
+                tier: user.tier.clone(),
             };
 
             Ok(Json(response))

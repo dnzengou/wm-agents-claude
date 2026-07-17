@@ -1,0 +1,10 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192' width='192' height='192'>
+  <rect width='192' height='192' rx='32' fill='#080d16'/>
+  <circle cx='96' cy='96' r='50' fill='none' stroke='#00f5ff' stroke-width='6'/>
+  <circle cx='96' cy='96' r='8' fill='#00f5ff'/>
+  <line x1='96' y1='46' x2='96' y2='62' stroke='#00f5ff' stroke-width='4' stroke-linecap='round'/>
+  <line x1='96' y1='130' x2='96' y2='146' stroke='#00f5ff' stroke-width='4' stroke-linecap='round'/>
+  <line x1='46' y1='96' x2='62' y2='96' stroke='#00f5ff' stroke-width='4' stroke-linecap='round'/>
+  <line x1='130' y1='96' x2='146' y2='96' stroke='#00f5ff' stroke-width='4' stroke-linecap='round'/>
+  <text x='96' y='175' text-anchor='middle' font-family='monospace' font-size='14' fill='#00f5ff' letter-spacing='2'>WM</text>
+</svg>

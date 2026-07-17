@@ -1,6 +1,6 @@
 [package]
 name = "worldmonitor-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["WorldMonitor Team"]
 description = "Lean, edge-native OSINT intelligence platform"
@@ -10,7 +10,7 @@ license = "MIT"
 # Web framework
 tokio = { version = "1.35", features = ["full"] }
 axum = { version = "0.7", features = ["macros"] }
-tower-http = { version = "0.5", features = ["cors", "compression-full"] }
+tower-http = { version = "0.5", features = ["cors", "compression-full", "catch-panic"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -47,6 +47,17 @@ urlencoding = "2.1"
 # Zero-dependency XML parser for direct RSS/Atom feed ingestion
 roxmltree = "0.19"
 
+# Kafka-style broadcast: converts tokio broadcast channels into async Streams
+# Used by the SSE /api/stream endpoint
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# Stripe webhook signature verification (HMAC-SHA256 over the raw request body).
+# We call the Stripe REST API directly via reqwest rather than pulling in the
+# heavyweight `stripe` SDK — keeps the binary lean and edge-native.
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
 [dev-dependencies]
 tokio-test = "0.4"
 
@@ -59,4 +70,6 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+# NOTE: intentionally NOT `panic = "abort"`. Unwinding lets tower-http's
+# CatchPanicLayer turn a panicking request handler into a 500 instead of taking
+# the whole server down — removing a single point of failure in production.

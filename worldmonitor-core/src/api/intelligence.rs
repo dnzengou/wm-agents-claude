@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
-};
+use axum::{extract::State, http::StatusCode, response::Json};
 use std::sync::Arc;
 use tracing::{debug, info};
 
@@ -29,7 +25,9 @@ pub async fn handler(
     match state.db.get_recent_events(100).await {
         Ok(events) => {
             // Cache the result
-            state.cache.put_json_with_ttl(cache_key, &events, INTELLIGENCE_TTL);
+            state
+                .cache
+                .put_json_with_ttl(cache_key, &events, INTELLIGENCE_TTL);
             info!("Returning {} events from database", events.len());
             Ok(Json(events))
         }

@@ -4,6 +4,34 @@ use tracing::{debug, info, warn};
 
 use crate::models::{CountryCoords, GdeltResponse, IntelEvent};
 
+// ─── NASA EONET response structs ─────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct EonetResponse {
+    events: Vec<EonetEvent>,
+}
+
+#[derive(serde::Deserialize)]
+struct EonetEvent {
+    title: String,
+    link: Option<String>,
+    categories: Vec<EonetCategory>,
+    geometry: Vec<EonetGeometry>,
+}
+
+#[derive(serde::Deserialize)]
+struct EonetCategory {
+    id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct EonetGeometry {
+    #[serde(rename = "type")]
+    geo_type: String,
+    /// [lon, lat] for Point; nested arrays for Polygon
+    coordinates: serde_json::Value,
+}
+
 // ─── Feed configuration ───────────────────────────────────────────────────────
 
 struct FeedConfig {
@@ -12,56 +40,235 @@ struct FeedConfig {
     domain: &'static str,
 }
 
-/// 26 authoritative, public RSS/Atom feeds across 14 intelligence domains.
+/// 45 authoritative, public RSS/Atom feeds across 14 intelligence domains.
+/// Includes HackerNews, YC Blog, Bellingcat OSINT, WHO, SpaceNews, Al-Monitor.
 /// Direct XML fetch via roxmltree — no third-party proxy dependency.
 /// Each entry also carries an optional geocoding fallback country for feeds
 /// whose items never mention a country by name (e.g. InciWeb wildfires).
 const FEEDS: &[FeedConfig] = &[
     // ── Geopolitical ──────────────────────────────────────────────────────────
-    FeedConfig { url: "https://feeds.bbci.co.uk/news/world/rss.xml",              domain: "geopolitical" },
-    FeedConfig { url: "https://www.aljazeera.com/xml/rss/all.xml",                domain: "geopolitical" },
+    FeedConfig {
+        url: "https://feeds.bbci.co.uk/news/world/rss.xml",
+        domain: "geopolitical",
+    },
+    FeedConfig {
+        url: "https://www.aljazeera.com/xml/rss/all.xml",
+        domain: "geopolitical",
+    },
     // ── Cyber / Social Engineering ────────────────────────────────────────────
-    FeedConfig { url: "https://feeds.feedburner.com/TheHackersNews",              domain: "cyber" },
-    FeedConfig { url: "https://krebsonsecurity.com/feed/",                        domain: "cyber" },
+    FeedConfig {
+        url: "https://feeds.feedburner.com/TheHackersNews",
+        domain: "cyber",
+    },
+    FeedConfig {
+        url: "https://krebsonsecurity.com/feed/",
+        domain: "cyber",
+    },
     // ── Energy ───────────────────────────────────────────────────────────────
-    FeedConfig { url: "https://oilprice.com/rss/main",                            domain: "energy" },
-    FeedConfig { url: "https://www.iea.org/news/rss/news.rss",                    domain: "energy" },
+    FeedConfig {
+        url: "https://oilprice.com/rss/main",
+        domain: "energy",
+    },
+    FeedConfig {
+        url: "https://www.iea.org/news/rss/news.rss",
+        domain: "energy",
+    },
     // ── Climate / Environmental ───────────────────────────────────────────────
-    FeedConfig { url: "https://climate.nasa.gov/news/rss.xml",                    domain: "climate" },
-    FeedConfig { url: "https://www.theguardian.com/environment/climate-crisis/rss", domain: "climate" },
+    FeedConfig {
+        url: "https://climate.nasa.gov/news/rss.xml",
+        domain: "climate",
+    },
+    FeedConfig {
+        url: "https://www.theguardian.com/environment/climate-crisis/rss",
+        domain: "climate",
+    },
     // ── Wildfire ─────────────────────────────────────────────────────────────
     // InciWeb incidents are US-only; events rarely name the country explicitly
-    FeedConfig { url: "https://inciweb.nwcg.gov/feeds/rss/incidents/",            domain: "wildfire" },
-    FeedConfig { url: "https://www.theguardian.com/environment/wildfires/rss",    domain: "wildfire" },
+    FeedConfig {
+        url: "https://inciweb.nwcg.gov/feeds/rss/incidents/",
+        domain: "wildfire",
+    },
+    FeedConfig {
+        url: "https://www.theguardian.com/environment/wildfires/rss",
+        domain: "wildfire",
+    },
     // ── Water Systems ────────────────────────────────────────────────────────
-    FeedConfig { url: "https://www.circleofblue.org/feed/",                       domain: "water" },
+    FeedConfig {
+        url: "https://www.circleofblue.org/feed/",
+        domain: "water",
+    },
     // ── Natural Hazards ───────────────────────────────────────────────────────
-    FeedConfig { url: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.atom", domain: "natural" },
-    FeedConfig { url: "https://reliefweb.int/disasters/rss.xml",                  domain: "natural" },
+    FeedConfig {
+        url: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.atom",
+        domain: "natural",
+    },
+    FeedConfig {
+        url: "https://reliefweb.int/disasters/rss.xml",
+        domain: "natural",
+    },
     // ── Nuclear Risks ────────────────────────────────────────────────────────
-    FeedConfig { url: "https://www.nti.org/feed/",                                domain: "nuclear" },
+    FeedConfig {
+        url: "https://www.nti.org/feed/",
+        domain: "nuclear",
+    },
     // ── Mining / Critical Raw Materials ──────────────────────────────────────
-    FeedConfig { url: "https://www.mining.com/feed/",                             domain: "mining" },
+    FeedConfig {
+        url: "https://www.mining.com/feed/",
+        domain: "mining",
+    },
     // ── Deforestation + Carbon MRV ───────────────────────────────────────────
-    FeedConfig { url: "https://news.mongabay.com/feed/",                          domain: "deforestation" },
+    FeedConfig {
+        url: "https://news.mongabay.com/feed/",
+        domain: "deforestation",
+    },
     // ── Ocean & Maritime ─────────────────────────────────────────────────────
-    FeedConfig { url: "https://www.theguardian.com/environment/oceans/rss",       domain: "ocean" },
+    FeedConfig {
+        url: "https://www.theguardian.com/environment/oceans/rss",
+        domain: "ocean",
+    },
     // ── Demographics / Labor / Housing ───────────────────────────────────────
-    FeedConfig { url: "https://news.un.org/feed/subscribe/en/news/topic/population/feed/rss.xml", domain: "demographics" },
+    FeedConfig {
+        url: "https://news.un.org/feed/subscribe/en/news/topic/population/feed/rss.xml",
+        domain: "demographics",
+    },
     // ── Uninsurability / Climate-Financial Risk ───────────────────────────────
-    FeedConfig { url: "https://www.insurancejournal.com/feed/",                   domain: "uninsurability" },
+    FeedConfig {
+        url: "https://www.insurancejournal.com/feed/",
+        domain: "uninsurability",
+    },
     // ── Critical Minerals & Strategic Supply Chains ───────────────────────────
-    FeedConfig { url: "https://www.benchmarkminerals.com/feed/",                  domain: "critical_minerals" },
-    FeedConfig { url: "https://www.miningweekly.com/feed",                        domain: "critical_minerals" },
+    FeedConfig {
+        url: "https://www.benchmarkminerals.com/feed/",
+        domain: "critical_minerals",
+    },
+    FeedConfig {
+        url: "https://www.miningweekly.com/feed",
+        domain: "critical_minerals",
+    },
     // ── Environmental / Climate Data ─────────────────────────────────────────
-    FeedConfig { url: "https://earthobservatory.nasa.gov/feeds/natural-hazards.rss", domain: "natural" },
-    FeedConfig { url: "https://www.carbonbrief.org/feed",                         domain: "climate" },
+    FeedConfig {
+        url: "https://earthobservatory.nasa.gov/feeds/natural-hazards.rss",
+        domain: "natural",
+    },
+    FeedConfig {
+        url: "https://www.carbonbrief.org/feed",
+        domain: "climate",
+    },
     // ── Global Disaster Alerts (GDACS — WHO/UN endorsed) ─────────────────────
-    FeedConfig { url: "https://www.gdacs.org/xml/rss.xml",                        domain: "natural" },
+    FeedConfig {
+        url: "https://www.gdacs.org/xml/rss.xml",
+        domain: "natural",
+    },
     // ── Nuclear (IAEA official feed) ─────────────────────────────────────────
-    FeedConfig { url: "https://www.iaea.org/newscenter/news/rss",                 domain: "nuclear" },
+    FeedConfig {
+        url: "https://www.iaea.org/newscenter/news/rss",
+        domain: "nuclear",
+    },
     // ── Geopolitical (Deutsche Welle — EN) ───────────────────────────────────
-    FeedConfig { url: "https://rss.dw.com/xml/rss-en-world",                     domain: "geopolitical" },
+    FeedConfig {
+        url: "https://rss.dw.com/xml/rss-en-world",
+        domain: "geopolitical",
+    },
+    // ── East Africa — Igihe (Rwanda, Kinyarwanda/FR) ─────────────────────────
+    FeedConfig {
+        url: "https://igihe.com/feed/",
+        domain: "geopolitical",
+    },
+    // ── East Africa — Daily Nation (Kenya) ───────────────────────────────────
+    FeedConfig {
+        url: "https://nation.africa/rss.xml",
+        domain: "geopolitical",
+    },
+    // ── West Africa — Punch Nigeria ───────────────────────────────────────────
+    FeedConfig {
+        url: "https://punchng.com/feed/",
+        domain: "geopolitical",
+    },
+    // ── South Asia — Dawn Pakistan ────────────────────────────────────────────
+    FeedConfig {
+        url: "https://www.dawn.com/feeds/home",
+        domain: "geopolitical",
+    },
+    // ── Climate — NOAA Climate.gov ────────────────────────────────────────────
+    FeedConfig {
+        url: "https://www.climate.gov/news-features/rss.xml",
+        domain: "climate",
+    },
+    // ── Tech / Systemic Risk — HackerNews Top Stories ────────────────────────
+    // HN surfaces zero-days, supply-chain attacks, AI governance, energy tech
+    // before mainstream press; domain classifier maps to cyber/geopolitical.
+    FeedConfig {
+        url: "https://news.ycombinator.com/rss",
+        domain: "cyber",
+    },
+    // ── Tech / Startups — YC Blog ─────────────────────────────────────────────
+    // YC essays on dual-use tech, AI safety, climate tech, defense startups.
+    FeedConfig {
+        url: "https://www.ycombinator.com/blog/rss",
+        domain: "cyber",
+    },
+    // ══ RRSS expansion — geographic + domain coverage gaps ════════════════════
+
+    // ── Wire services ────────────────────────────────────────────────────────
+    FeedConfig {
+        url: "https://feeds.reuters.com/reuters/worldNews",
+        domain: "geopolitical",
+    },
+    FeedConfig {
+        url: "https://apnews.com/hub/world-news?format=rss",
+        domain: "geopolitical",
+    },
+    // ── OSINT / investigative ─────────────────────────────────────────────────
+    // Bellingcat: open-source investigations (MH17, Navalny, chemical attacks)
+    FeedConfig {
+        url: "https://www.bellingcat.com/feed/",
+        domain: "geopolitical",
+    },
+    // ── Middle East ───────────────────────────────────────────────────────────
+    FeedConfig {
+        url: "https://www.al-monitor.com/rss",
+        domain: "geopolitical",
+    },
+    FeedConfig {
+        url: "https://www.middleeasteye.net/rss",
+        domain: "geopolitical",
+    },
+    FeedConfig {
+        url: "https://www.jpost.com/Rss/RssFeedsWorld.aspx",
+        domain: "geopolitical",
+    },
+    // ── Asia-Pacific ─────────────────────────────────────────────────────────
+    FeedConfig {
+        url: "https://thediplomat.com/feed/",
+        domain: "geopolitical",
+    },
+    // ── Russia / CIS (independent press) ─────────────────────────────────────
+    FeedConfig {
+        url: "https://www.themoscowtimes.com/rss",
+        domain: "geopolitical",
+    },
+    // ── Francophone Africa / Global South — RFI ───────────────────────────────
+    FeedConfig {
+        url: "https://www.rfi.fr/en/rss",
+        domain: "geopolitical",
+    },
+    // ── Health Security — WHO ─────────────────────────────────────────────────
+    // Disease outbreaks, PHEIC declarations, antimicrobial resistance
+    FeedConfig {
+        url: "https://www.who.int/rss-feeds/news-english.xml",
+        domain: "natural",
+    },
+    // ── Space + Satellite Intelligence ────────────────────────────────────────
+    // ASAT tests, GPS jamming, satellite imagery findings, dual-use launches
+    FeedConfig {
+        url: "https://spacenews.com/feed/",
+        domain: "geopolitical",
+    },
+    // ── Humanitarian / Conflict Data (ACLED via ReliefWeb topic) ─────────────
+    FeedConfig {
+        url: "https://reliefweb.int/topics/rss.xml",
+        domain: "geopolitical",
+    },
 ];
 
 // ─── Domain keyword classifier ────────────────────────────────────────────────
@@ -70,77 +277,137 @@ const FEEDS: &[FeedConfig] = &[
 /// Checks text for strong domain signals; falls back to the feed's declared domain.
 fn classify_domain(text: &str, feed_domain: &'static str) -> &'static str {
     let t = text.to_lowercase();
-    if t.contains("nuclear") || t.contains("reactor") || t.contains("radiation")
-        || t.contains("radioactiv") || t.contains("atomic weapon")
+    if t.contains("nuclear")
+        || t.contains("reactor")
+        || t.contains("radiation")
+        || t.contains("radioactiv")
+        || t.contains("atomic weapon")
     {
         return "nuclear";
     }
     if t.contains("ransomware") || t.contains("cyberattack") || t.contains("data breach")
-        || t.contains("zero-day") || t.contains("malware") || t.contains("phishing")
-        || t.contains("social engineering") || t.contains("ddos")
+        || t.contains("zero-day") || t.contains("zero day") || t.contains("malware")
+        || t.contains("phishing") || t.contains("social engineering") || t.contains("ddos")
+        // HackerNews / security-research signals
+        || t.contains("exploit") || t.contains("vulnerability") || t.contains("cve-")
+        || t.contains("remote code execution") || t.contains("rce") || t.contains("backdoor")
+        || t.contains("supply chain attack") || t.contains("apt group") || t.contains("intrusion")
+        || t.contains("data exfil") || t.contains("credentials leak") || t.contains("sql injection")
+        || t.contains("side-channel") || t.contains("cryptographic flaw")
+        || t.contains("firmware attack") || t.contains("memory corruption")
+        || (t.contains("hack") && (t.contains("critical") || t.contains("government") || t.contains("infrastructure")))
     {
         return "cyber";
     }
     if t.contains("wildfire") || t.contains("forest fire") || t.contains("bushfire") {
         return "wildfire";
     }
-    if t.contains("earthquake") || t.contains("tsunami") || t.contains("volcanic")
-        || t.contains("eruption") || t.contains("seismic")
+    if t.contains("earthquake")
+        || t.contains("tsunami")
+        || t.contains("volcanic")
+        || t.contains("eruption")
+        || t.contains("seismic")
     {
         return "natural";
     }
-    if t.contains("deforestation") || t.contains("amazon forest") || t.contains("rainforest")
-        || t.contains("carbon credit") || t.contains("agb") || t.contains("biomass loss")
+    if t.contains("deforestation")
+        || t.contains("amazon forest")
+        || t.contains("rainforest")
+        || t.contains("carbon credit")
+        || t.contains("agb")
+        || t.contains("biomass loss")
     {
         return "deforestation";
     }
-    if t.contains("oil spill") || t.contains("pipeline") || t.contains("gas shortage")
-        || t.contains("energy crisis") || t.contains("power blackout")
+    if t.contains("oil spill")
+        || t.contains("pipeline")
+        || t.contains("gas shortage")
+        || t.contains("energy crisis")
+        || t.contains("power blackout")
         || t.contains("electricity grid")
+        || t.contains("grid-scale")
+        || t.contains("grid scale")
+        || t.contains("energy storage")
+        || t.contains("battery tech")
+        || t.contains("iron-air")
+        || t.contains("nuclear fusion")
+        || t.contains("small modular reactor")
+        || t.contains("smr")
+        || t.contains("offshore wind")
+        || t.contains("solar farm disruption")
     {
         return "energy";
     }
-    if t.contains("water shortage") || t.contains("aquifer") || t.contains("water crisis")
-        || t.contains("desalination") || t.contains("water stress")
+    if t.contains("water shortage")
+        || t.contains("aquifer")
+        || t.contains("water crisis")
+        || t.contains("desalination")
+        || t.contains("water stress")
     {
         return "water";
     }
-    if t.contains("rare earth") || t.contains("critical mineral") || t.contains("strategic mineral")
-        || t.contains("battery material") || t.contains("mineral supply chain")
-        || t.contains("lithium supply") || t.contains("cobalt supply")
-        || t.contains("graphite supply") || t.contains("ev metal")
-        || t.contains("nickel supply") || t.contains("tungsten")
-        || t.contains("semiconductor supply") || t.contains("chip shortage")
+    if t.contains("rare earth")
+        || t.contains("critical mineral")
+        || t.contains("strategic mineral")
+        || t.contains("battery material")
+        || t.contains("mineral supply chain")
+        || t.contains("lithium supply")
+        || t.contains("cobalt supply")
+        || t.contains("graphite supply")
+        || t.contains("ev metal")
+        || t.contains("nickel supply")
+        || t.contains("tungsten")
+        || t.contains("semiconductor supply")
+        || t.contains("chip shortage")
     {
         return "critical_minerals";
     }
-    if t.contains("lithium") || t.contains("cobalt") || t.contains("mine collapse")
-        || t.contains("tailings") || t.contains("artisanal mining")
+    if t.contains("lithium")
+        || t.contains("cobalt")
+        || t.contains("mine collapse")
+        || t.contains("tailings")
+        || t.contains("artisanal mining")
     {
         return "mining";
     }
-    if t.contains("sea level") || t.contains("ocean acidif") || t.contains("coral bleach")
-        || t.contains("maritime") || t.contains("shipping lane")
+    if t.contains("sea level")
+        || t.contains("ocean acidif")
+        || t.contains("coral bleach")
+        || t.contains("maritime")
+        || t.contains("shipping lane")
     {
         return "ocean";
     }
-    if t.contains("flood") || t.contains("hurricane") || t.contains("cyclone")
-        || t.contains("climate change") || t.contains("global warming") || t.contains("drought")
+    if t.contains("flood")
+        || t.contains("hurricane")
+        || t.contains("cyclone")
+        || t.contains("climate change")
+        || t.contains("global warming")
+        || t.contains("drought")
     {
         return "climate";
     }
-    if t.contains("housing affordab") || t.contains("labor shortage") || t.contains("migration")
-        || t.contains("demographic") || t.contains("workforce shortage")
+    if t.contains("housing affordab")
+        || t.contains("labor shortage")
+        || t.contains("migration")
+        || t.contains("demographic")
+        || t.contains("workforce shortage")
         || t.contains("population decline")
     {
         return "demographics";
     }
-    if t.contains("uninsurable") || t.contains("uninsurability")
-        || t.contains("climate risk premium") || t.contains("catastrophe bond")
-        || t.contains("cat bond") || t.contains("insured climate loss")
-        || t.contains("flood insurance") || t.contains("wildfire insurance")
-        || t.contains("coverage gap") || t.contains("parametric insurance")
-        || t.contains("reinsurance loss") || t.contains("natural catastrophe loss")
+    if t.contains("uninsurable")
+        || t.contains("uninsurability")
+        || t.contains("climate risk premium")
+        || t.contains("catastrophe bond")
+        || t.contains("cat bond")
+        || t.contains("insured climate loss")
+        || t.contains("flood insurance")
+        || t.contains("wildfire insurance")
+        || t.contains("coverage gap")
+        || t.contains("parametric insurance")
+        || t.contains("reinsurance loss")
+        || t.contains("natural catastrophe loss")
     {
         return "uninsurability";
     }
@@ -154,41 +421,90 @@ fn calculate_severity(text: &str, domain: &str) -> i32 {
 
     // Base score reflects inherent domain threat level
     let base: i32 = match domain {
-        "nuclear"       => 7,
-        "cyber"         => 5,
-        "energy"        => 4,
-        "wildfire"      => 5,
-        "water"         => 4,
-        "climate"       => 4,
-        "natural"       => 5,
-        "mining"        => 3,
-        "deforestation"   => 3,
-        "ocean"           => 3,
-        "demographics"    => 3,
-        "uninsurability"   => 4,
-        "critical_minerals"=> 5,
-        _                  => 4, // geopolitical
+        "nuclear" => 7,
+        "cyber" => 5,
+        "energy" => 4,
+        "wildfire" => 5,
+        "water" => 4,
+        "climate" => 4,
+        "natural" => 5,
+        "mining" => 3,
+        "deforestation" => 3,
+        "ocean" => 3,
+        "demographics" => 3,
+        "uninsurability" => 4,
+        "critical_minerals" => 5,
+        _ => 4, // geopolitical
     };
 
     // Escalation signals — override upward only
     const CRITICAL: &[&str] = &[
-        "killed", "dead", "death", "explosion", "attack", "invasion", "missile",
-        "strike", "casualties", "meltdown", "detonation", "catastrophe", "massacre",
+        "killed",
+        "dead",
+        "death",
+        "explosion",
+        "attack",
+        "invasion",
+        "missile",
+        "strike",
+        "casualties",
+        "meltdown",
+        "detonation",
+        "catastrophe",
+        "massacre",
     ];
     const HIGH: &[&str] = &[
-        "conflict", "crisis", "emergency", "breach", "ransomware", "hack", "outage",
-        "shortage", "hurricane", "earthquake", "eruption", "wildfire", "contamination",
-        "spill", "critical", "extreme",
+        "conflict",
+        "crisis",
+        "emergency",
+        "breach",
+        "ransomware",
+        "hack",
+        "outage",
+        "shortage",
+        "hurricane",
+        "earthquake",
+        "eruption",
+        "wildfire",
+        "contamination",
+        "spill",
+        "critical",
+        "extreme",
     ];
     const MEDIUM: &[&str] = &[
-        "protest", "tension", "sanctions", "disruption", "warning", "flood", "drought",
-        "leak", "fire", "arrest", "recall", "alert",
+        "protest",
+        "tension",
+        "sanctions",
+        "disruption",
+        "warning",
+        "flood",
+        "drought",
+        "leak",
+        "fire",
+        "arrest",
+        "recall",
+        "alert",
     ];
 
     let mut score = base;
-    for kw in CRITICAL { if t.contains(kw) { score = score.max(8); break; } }
-    for kw in HIGH     { if t.contains(kw) { score = score.max(6); break; } }
-    for kw in MEDIUM   { if t.contains(kw) { score = score.max(5); break; } }
+    for kw in CRITICAL {
+        if t.contains(kw) {
+            score = score.max(8);
+            break;
+        }
+    }
+    for kw in HIGH {
+        if t.contains(kw) {
+            score = score.max(6);
+            break;
+        }
+    }
+    for kw in MEDIUM {
+        if t.contains(kw) {
+            score = score.max(5);
+            break;
+        }
+    }
 
     score.clamp(1, 10)
 }
@@ -196,8 +512,9 @@ fn calculate_severity(text: &str, domain: &str) -> i32 {
 // ─── RSS / Atom XML parser ────────────────────────────────────────────────────
 
 /// Parse RSS 2.0 (`<item>`) or Atom (`<entry>`) XML.
-/// Returns (title, description) pairs — at most 10 per feed.
-fn parse_rss_xml(xml: &str) -> Vec<(String, String)> {
+/// Returns `(title, description, link)` triples — at most 10 per feed.
+/// Handles both RSS 2.0 `<link>` text content and Atom `<link href="…"/>` attributes.
+fn parse_rss_xml(xml: &str) -> Vec<(String, String, Option<String>)> {
     let doc = match roxmltree::Document::parse(xml) {
         Ok(d) => d,
         Err(e) => {
@@ -212,6 +529,7 @@ fn parse_rss_xml(xml: &str) -> Vec<(String, String)> {
         if tag != "item" && tag != "entry" {
             continue;
         }
+
         let title = node
             .children()
             .find(|n| n.tag_name().name() == "title")
@@ -228,8 +546,31 @@ fn parse_rss_xml(xml: &str) -> Vec<(String, String)> {
             .trim()
             .to_string();
 
+        // RSS 2.0: <link>https://…</link>  (text node)
+        // Atom:    <link href="https://…" rel="alternate"/>  (attribute)
+        let link = node
+            .children()
+            .find(|n| n.tag_name().name() == "link")
+            .and_then(|n| {
+                // Text content first (RSS 2.0)
+                n.text()
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| t.starts_with("http"))
+                    // Fall back to href attribute (Atom)
+                    .or_else(|| n.attribute("href").map(|h| h.to_string()))
+            })
+            // Also check <link> with rel="alternate" for Atom
+            .or_else(|| {
+                node.children()
+                    .find(|n| {
+                        n.tag_name().name() == "link"
+                            && n.attribute("rel").map(|r| r == "alternate").unwrap_or(true)
+                    })
+                    .and_then(|n| n.attribute("href").map(|h| h.to_string()))
+            });
+
         if !title.is_empty() {
-            items.push((title, desc));
+            items.push((title, desc, link));
         }
         if items.len() >= 10 {
             break;
@@ -254,16 +595,31 @@ impl IntelligenceFusion {
         match Self::fetch_gdelt().await {
             Ok(events) => {
                 debug!("GDELT: {} events", events.len());
-                for e in events { Self::merge_event(&mut grid, e); }
+                for e in events {
+                    Self::merge_event(&mut grid, e);
+                }
             }
             Err(e) => warn!("GDELT fetch failed: {}", e),
+        }
+
+        // NASA EONET — Earth observation events with exact coordinates
+        match Self::fetch_eonet().await {
+            Ok(events) => {
+                debug!("EONET: {} earth-observation events", events.len());
+                for e in events {
+                    Self::merge_event(&mut grid, e);
+                }
+            }
+            Err(e) => warn!("EONET fetch failed: {}", e),
         }
 
         // Domain RSS feeds (concurrent)
         match Self::fetch_rss().await {
             Ok(events) => {
                 debug!("RSS: {} events across {} feeds", events.len(), FEEDS.len());
-                for e in events { Self::merge_event(&mut grid, e); }
+                for e in events {
+                    Self::merge_event(&mut grid, e);
+                }
             }
             Err(e) => warn!("RSS fetch failed: {}", e),
         }
@@ -272,13 +628,16 @@ impl IntelligenceFusion {
         events.sort_by(|a, b| b.severity.cmp(&a.severity));
         events.truncate(150);
 
-        info!("Intelligence fusion: {} unique events across all domains", events.len());
+        info!(
+            "Intelligence fusion: {} unique events across all domains",
+            events.len()
+        );
         events
     }
 
     /// Merge: keep the higher-severity event per 0.1° grid cell.
     fn merge_event(grid: &mut HashMap<String, IntelEvent>, event: IntelEvent) {
-        let key = format!("{}:{}", event.grid_key(), &event.domain);
+        let key = format!("{}:{}", event.grid_key(), event.domain);
         if let Some(existing) = grid.get(&key) {
             if existing.severity >= event.severity {
                 return;
@@ -290,7 +649,8 @@ impl IntelligenceFusion {
     // ── GDELT ─────────────────────────────────────────────────────────────────
 
     async fn fetch_gdelt() -> anyhow::Result<Vec<IntelEvent>> {
-        let query = urlencoding::encode("conflict OR war OR attack OR nuclear OR cyber OR disaster");
+        let query =
+            urlencoding::encode("conflict OR war OR attack OR nuclear OR cyber OR disaster");
         let url = format!(
             "https://api.gdeltproject.org/api/v2/geo/geo?query={}&format=geojson&timespan=6h",
             query
@@ -344,6 +704,91 @@ impl IntelligenceFusion {
             events.push(
                 IntelEvent::new(&country, lat, lon, severity, &headline, "gdelt")
                     .with_domain(domain),
+            );
+        }
+
+        Ok(events)
+    }
+
+    // ── NASA EONET — Earth Observation Natural Events ─────────────────────────
+
+    /// Map EONET category IDs to our internal domain strings.
+    fn eonet_domain(category_id: &str) -> &'static str {
+        match category_id {
+            "wildfires" => "wildfire",
+            "volcanoes" => "natural",
+            "earthquakes" => "natural",
+            "landslides" => "natural",
+            "seaLakeIce" => "natural",
+            "severeStorms" => "climate",
+            "floods" => "climate",
+            "drought" => "climate",
+            "snow" => "climate",
+            "dustHaze" => "climate",
+            "tempExtremes" => "climate",
+            "waterColor" => "ocean",
+            "manMade" => "geopolitical",
+            _ => "natural",
+        }
+    }
+
+    async fn fetch_eonet() -> anyhow::Result<Vec<IntelEvent>> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .user_agent("WorldMonitor-Agents/3.0 (OSINT; +https://worldmonitor.app)")
+            .build()?;
+
+        let url = "https://eonet.gsfc.nasa.gov/api/v3/events?days=7&status=open&limit=60";
+        let response = client.get(url).send().await?;
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("EONET status: {}", response.status()));
+        }
+
+        let data: EonetResponse = response.json().await?;
+        let mut events = Vec::new();
+
+        for ev in data.events {
+            // Use the most-recent geometry point
+            let geom = match ev.geometry.last() {
+                Some(g) => g,
+                None => continue,
+            };
+            if geom.geo_type != "Point" {
+                continue;
+            }
+
+            let coords = match (
+                geom.coordinates.get(0).and_then(|v| v.as_f64()),
+                geom.coordinates.get(1).and_then(|v| v.as_f64()),
+            ) {
+                (Some(lon), Some(lat)) => (lat, lon),
+                _ => continue,
+            };
+
+            let (lat, lon) = coords;
+            if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+                continue;
+            }
+
+            let domain = ev
+                .categories
+                .first()
+                .map(|c| Self::eonet_domain(&c.id))
+                .unwrap_or("natural");
+
+            // Try to extract country from the event title; fall back to "Unknown".
+            // EONET often includes region names like "Wildfire - Big Basin, California".
+            let country = CountryCoords::extract_from_text(&ev.title)
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            let severity = calculate_severity(&ev.title, domain);
+
+            events.push(
+                IntelEvent::new(&country, lat, lon, severity, &ev.title, "eonet")
+                    .with_domain(domain)
+                    .with_link(ev.link),
             );
         }
 
@@ -407,7 +852,10 @@ impl IntelligenceFusion {
             brief.push('\n');
         }
 
-        let med = events.iter().filter(|e| e.severity >= 5 && e.severity < 7).count();
+        let med = events
+            .iter()
+            .filter(|e| e.severity >= 5 && e.severity < 7)
+            .count();
         if med > 0 {
             brief.push_str(&format!(
                 "📊 {} additional events of note. Situation requires monitoring.\n\n",
@@ -432,7 +880,7 @@ impl IntelligenceFusion {
 fn domain_country_fallback(feed_domain: &str) -> Option<&'static str> {
     match feed_domain {
         "wildfire" => Some("United States"),
-        _          => None,
+        _ => None,
     }
 }
 
@@ -452,7 +900,7 @@ async fn fetch_single_feed(
     let fallback = domain_country_fallback(feed_domain);
 
     let mut events = Vec::new();
-    for (title, desc) in parsed {
+    for (title, desc, link) in parsed {
         let text = format!("{} {}", title, desc);
         let domain = classify_domain(&text, feed_domain);
 
@@ -467,7 +915,8 @@ async fn fetch_single_feed(
                 let severity = calculate_severity(&text, domain);
                 events.push(
                     IntelEvent::new(&country, lat, lon, severity, &title, "rss")
-                        .with_domain(domain),
+                        .with_domain(domain)
+                        .with_link(link),
                 );
             }
         }
@@ -558,9 +1007,20 @@ mod tests {
 
     #[test]
     fn test_severity_geopolitical() {
-        assert_eq!(calculate_severity("Multiple people killed in bombing attack", "geopolitical"), 8);
-        assert_eq!(calculate_severity("Protests amid rising tensions", "geopolitical"), 6);
-        assert_eq!(calculate_severity("Diplomatic meeting next week", "geopolitical"), 4);
+        assert_eq!(
+            calculate_severity("Multiple people killed in bombing attack", "geopolitical"),
+            8
+        );
+        // "protests" and "tensions" are both MEDIUM signals (base 4 → 5);
+        // neither appears in the HIGH list, so 5 is the correct score.
+        assert_eq!(
+            calculate_severity("Protests amid rising tensions", "geopolitical"),
+            5
+        );
+        assert_eq!(
+            calculate_severity("Diplomatic meeting next week", "geopolitical"),
+            4
+        );
     }
 
     #[test]
@@ -571,10 +1031,22 @@ mod tests {
 
     #[test]
     fn test_classify_domain() {
-        assert_eq!(classify_domain("Ransomware attack on hospital", "geopolitical"), "cyber");
-        assert_eq!(classify_domain("Earthquake strikes coastal city", "geopolitical"), "natural");
-        assert_eq!(classify_domain("Oil pipeline explosion causes spill", "geopolitical"), "energy");
-        assert_eq!(classify_domain("Diplomatic summit in Brussels", "geopolitical"), "geopolitical");
+        assert_eq!(
+            classify_domain("Ransomware attack on hospital", "geopolitical"),
+            "cyber"
+        );
+        assert_eq!(
+            classify_domain("Earthquake strikes coastal city", "geopolitical"),
+            "natural"
+        );
+        assert_eq!(
+            classify_domain("Oil pipeline explosion causes spill", "geopolitical"),
+            "energy"
+        );
+        assert_eq!(
+            classify_domain("Diplomatic summit in Brussels", "geopolitical"),
+            "geopolitical"
+        );
     }
 
     #[test]

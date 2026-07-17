@@ -1,0 +1,56 @@
+name: dist
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - '.github/workflows/dist.yml'
+  pull_request:
+    paths:
+      - 'packages/**'
+  workflow_dispatch:
+
+jobs:
+  chrome-ext:
+    name: Chrome extension zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash packages/chrome-ext/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worldmonitor-chrome-ext
+          path: packages/chrome-ext/worldmonitor-chrome-ext-v*.zip
+          if-no-files-found: error
+
+  npm-sdk:
+    name: NPM SDK tarball
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/terminal-sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worldmonitor-terminal-sdk
+          path: packages/terminal-sdk/*.tgz
+          if-no-files-found: error
+
+  twa-validate:
+    name: TWA manifest validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Validate twa-manifest.json
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('packages/twa/twa-manifest.json','utf8'))"
+          echo "twa-manifest.json: valid JSON"
