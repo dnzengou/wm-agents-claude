@@ -31,6 +31,22 @@ const WorldMap = dynamic(
   },
 );
 
+// Globe: Three.js scene — heavy, so also lazy-loaded on demand
+const Globe = dynamic(
+  () => import('@/components/map/Globe').then(m => m.Globe),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-obsidian gap-3">
+        <div className="w-6 h-6 border-2 border-neon border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs text-text-muted">Loading globe…</span>
+      </div>
+    ),
+  },
+);
+
+type ViewMode = 'map' | 'globe';
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function toSeverityLabel(score: number) {
@@ -225,6 +241,8 @@ export function DashboardClient({ initialEvents }: Props) {
       .catch(() => setBriefLoading(false));
   }, [topCountry]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('map');
   // ── Collapsible panels — both hidden on mobile, open on desktop ────────────
   const [leftOpen,  setLeftOpen]  = useState(false); // SSR-safe default: closed
   const [rightOpen, setRightOpen] = useState(false);
@@ -398,6 +416,11 @@ export function DashboardClient({ initialEvents }: Props) {
           </div>
         </div>
 
+        {/* Center — Map */}
+        {/* overflow-visible so Leaflet popups/tooltips can extend beyond bounds */}
+        <div className="flex-1 relative">
+          {/* Layer control + view toggle — sits above map via z-[1001] */}
+          <div className="absolute top-3 left-3 z-[1001] flex items-center gap-2">
         {/* ── Center — Map (always fills remaining space) ──────────────────── */}
         <div className="flex-1 min-h-0 relative">
 
@@ -429,6 +452,32 @@ export function DashboardClient({ initialEvents }: Props) {
               onToggleLayer={handleToggleLayer}
               onToggleCategory={handleToggleCategory}
             />
+            {/* Map / Globe view switch */}
+            <div
+              role="tablist"
+              className="glass-panel rounded-lg p-0.5 flex items-center gap-0.5"
+            >
+              {(['map', 'globe'] as const).map(m => {
+                const active = viewMode === m;
+                return (
+                  <button
+                    key={m}
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setViewMode(m)}
+                    className="px-2.5 py-1 rounded text-2xs font-mono uppercase tracking-wider transition-colors"
+                    style={{
+                      background: active ? 'rgba(0,245,255,0.18)' : 'transparent',
+                      color: active ? '#00F5FF' : 'rgba(255,255,255,0.55)',
+                      border: `1px solid ${active ? 'rgba(0,245,255,0.4)' : 'transparent'}`,
+                    }}
+                    title={m === 'map' ? 'Flat 2D map' : 'Immersive 3D globe — scenario planning'}
+                  >
+                    {m === 'map' ? '2D Map' : '3D Globe'}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Domain filter pills — single scrollable row */}
@@ -457,6 +506,10 @@ export function DashboardClient({ initialEvents }: Props) {
             })}
           </div>
 
+          {viewMode === 'map'
+            ? <WorldMap events={filteredEvents} />
+            : <Globe events={filteredEvents} />
+          }
           {/* Map */}
           <WorldMap events={filteredEvents} selectedEventId={selectedEventId} />
         </div>
