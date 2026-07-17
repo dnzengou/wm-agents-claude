@@ -452,6 +452,7 @@ function App() {
     const [error, setError] = useState(null);
     const [tier, setTier] = useState(null);
     const [upgrading, setUpgrading] = useState(false);
+    const [notice, setNotice] = useState(null);
 
     // Initial load
     useEffect(() => {
@@ -471,10 +472,40 @@ function App() {
     }, []);
 
     // Load billing tier (separate so a billing outage never blocks the app).
-    // After a successful Stripe redirect (?upgrade=success) this reflects the
-    // freshly-applied tier once the webhook has landed.
     useEffect(() => {
         API.getTier().then(setTier).catch(() => {});
+    }, []);
+
+    // Close the purchase funnel: read the ?upgrade= flag Stripe redirects back
+    // with, show a confirmation, and — on success — re-poll the tier a few times
+    // so the UI flips to Pro as soon as the fulfilment webhook lands (it may lag
+    // the redirect by a second or two). The query param is stripped either way.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const upgrade = params.get('upgrade');
+        if (!upgrade) return;
+
+        window.history.replaceState({}, '', window.location.pathname);
+
+        if (upgrade === 'success') {
+            setNotice({ kind: 'success', text: '🎉 Payment received — activating your plan…' });
+            let tries = 0;
+            const poll = setInterval(() => {
+                tries += 1;
+                API.getTier()
+                    .then(t => {
+                        setTier(t);
+                        if (t.tier !== 'free') {
+                            clearInterval(poll);
+                            setNotice({ kind: 'success', text: `✓ You're on the ${t.tier} plan — unlimited alerts unlocked.` });
+                        }
+                    })
+                    .catch(() => {});
+                if (tries >= 6) clearInterval(poll);
+            }, 2000);
+        } else if (upgrade === 'cancelled') {
+            setNotice({ kind: 'info', text: 'Checkout cancelled — no charge was made.' });
+        }
     }, []);
 
     // Start Stripe Checkout and redirect to the hosted payment page.
@@ -555,6 +586,12 @@ function App() {
 
     return htmlx`
         <div class="app">
+            ${notice && htmlx`
+                <div class="notice notice-${notice.kind}" role="status">
+                    <span>${notice.text}</span>
+                    <button class="notice-close" aria-label="Dismiss" onClick=${() => setNotice(null)}>×</button>
+                </div>
+            `}
             ${(!tier || tier.tier === 'free') ? htmlx`
                 <div class="upgrade-banner" onClick=${() => tier?.billing_enabled !== false && handleUpgrade('pro')}>
                     Free tier: ${tier?.max_alerts ?? 3} alerts, 24h delayed data

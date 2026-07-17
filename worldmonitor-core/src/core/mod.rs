@@ -637,7 +637,7 @@ impl IntelligenceFusion {
 
     /// Merge: keep the higher-severity event per 0.1° grid cell.
     fn merge_event(grid: &mut HashMap<String, IntelEvent>, event: IntelEvent) {
-        let key = format!("{}:{}", event.grid_key(), &event.domain);
+        let key = format!("{}:{}", event.grid_key(), event.domain);
         if let Some(existing) = grid.get(&key) {
             if existing.severity >= event.severity {
                 return;

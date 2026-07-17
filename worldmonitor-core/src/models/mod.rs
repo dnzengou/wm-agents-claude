@@ -718,6 +718,15 @@ pub mod responses {
         pub url: String,
     }
 
+    /// GET /api/billing/config — public client-side billing config. The
+    /// publishable key is safe to expose; it enables future client-side
+    /// Stripe.js flows.
+    #[derive(Debug, Serialize)]
+    pub struct BillingConfigResponse {
+        pub publishable_key: String,
+        pub billing_enabled: bool,
+    }
+
     /// GET /api/billing/tier — current tier and what it unlocks.
     #[derive(Debug, Serialize)]
     pub struct TierResponse {
