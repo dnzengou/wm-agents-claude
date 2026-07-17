@@ -290,8 +290,70 @@ export function DashboardClient({ initialEvents }: Props) {
   }, [topCountry]); // eslint-disable-line react-hooks/exhaustive-deps
   // ──────────────────────────────────────────────────────────────────────────
 
+  // ── URL-canonical state (evo-forge v1.2): view + domain live in the URL so
+  // every user gesture becomes a shareable deep link.
+  //
+  // Under Next.js SSR, useState initializers run on the server (where
+  // `window` is undefined) and their result is re-used on the client — a
+  // `typeof window` guard would always fall through to the default. So the
+  // pattern is: defaults on first render, then a client-only effect hydrates
+  // from the URL, and a hydration gate stops the write-effect from clobbering
+  // the deep-link params before we've read them.
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('map');
+  const [viewMode, setViewMode] = useState<ViewMode>('globe');
+  const [shareState, setShareState] = useState<'idle' | 'copied'>('idle');
+  const urlHydrated = useRef(false);
+
+  // Gate URL-derived "active" styling behind a mounted flag: server + first
+  // client paint render every tab/pill as inactive → identical HTML → no
+  // hydration mismatch. Effect runs post-mount, we set mounted=true, React
+  // repaints with the correct active state. One-frame flash on deep-link
+  // cold-load is a fair trade for a clean console.
+  const [mounted, setMounted] = useState(false);
+
+  // 1) Hydrate state from URL on mount (client only).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const v = q.get('view');
+    const d = q.get('domain');
+    if (v === 'map') setViewMode('map');
+    if (d && DOMAINS.some(x => x.id === d)) setSelectedDomain(d);
+    urlHydrated.current = true;
+    setMounted(true);
+  }, []);
+
+  // 2) Write state → URL on change, but only after hydration.
+  useEffect(() => {
+    if (!urlHydrated.current) return;
+    const url = new URL(window.location.href);
+    if (viewMode === 'map') url.searchParams.set('view', 'map');
+    else url.searchParams.delete('view');   // globe is default → omit
+    if (selectedDomain) url.searchParams.set('domain', selectedDomain);
+    else url.searchParams.delete('domain');
+    window.history.replaceState({}, '', url.toString());
+  }, [viewMode, selectedDomain]);
+
+  // 3) Popstate: back/forward re-hydrates from URL.
+  useEffect(() => {
+    const onPop = () => {
+      const q = new URLSearchParams(window.location.search);
+      const v = q.get('view');
+      const d = q.get('domain');
+      setViewMode(v === 'map' ? 'map' : 'globe');
+      setSelectedDomain(d && DOMAINS.some(x => x.id === d) ? d : null);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  const handleShare = useCallback(async () => {
+    if (typeof window === 'undefined' || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShareState('copied');
+      setTimeout(() => setShareState('idle'), 1600);
+    } catch { /* clipboard blocked — silent */ }
+  }, []);
 
   const [layers, setLayers] = useState<Layer[]>(() => {
     const counts: Record<string, number> = { geopolitical: events.length };
@@ -330,7 +392,7 @@ export function DashboardClient({ initialEvents }: Props) {
     <div className="min-h-screen bg-obsidian flex flex-col">
       {/* Status bar */}
       <StatusBar
-        version="2.6.5"
+        version="2.6.6"
         isLive={!isLoading}
         region="Global"
         lastUpdate={lastUpdated ?? Date.now()}
@@ -360,13 +422,13 @@ export function DashboardClient({ initialEvents }: Props) {
               onToggleLayer={handleToggleLayer}
               onToggleCategory={handleToggleCategory}
             />
-            {/* Map / Globe view switch */}
+            {/* Globe / Map view switch — globe is default per v2.6.6 */}
             <div
               role="tablist"
               className="glass-panel rounded-lg p-0.5 flex items-center gap-0.5"
             >
-              {(['map', 'globe'] as const).map(m => {
-                const active = viewMode === m;
+              {(['globe', 'map'] as const).map(m => {
+                const active = mounted && viewMode === m;
                 return (
                   <button
                     key={m}
@@ -379,19 +441,34 @@ export function DashboardClient({ initialEvents }: Props) {
                       color: active ? '#00F5FF' : 'rgba(255,255,255,0.55)',
                       border: `1px solid ${active ? 'rgba(0,245,255,0.4)' : 'transparent'}`,
                     }}
-                    title={m === 'map' ? 'Flat 2D map' : 'Immersive 3D globe — scenario planning'}
+                    title={m === 'globe' ? 'Immersive 3D globe — scenario planning' : 'Flat 2D map'}
                   >
-                    {m === 'map' ? '2D Map' : '3D Globe'}
+                    {m === 'globe' ? '3D Globe' : '2D Map'}
                   </button>
                 );
               })}
             </div>
+
+            {/* Share view — copies the current URL (view + domain) to clipboard.
+                Commercial ARM lever per evo-metaclaw v1.8: shareable deep links
+                = briefing citations + analytics granularity + natural nav. */}
+            <button
+              onClick={handleShare}
+              className="glass-panel rounded-lg px-2.5 py-1 text-2xs font-mono uppercase tracking-wider transition-colors"
+              style={{
+                color: shareState === 'copied' ? '#00E676' : 'rgba(255,255,255,0.55)',
+                border: `1px solid ${shareState === 'copied' ? 'rgba(0,230,118,0.4)' : 'transparent'}`,
+              }}
+              title="Copy shareable link to this view"
+            >
+              {shareState === 'copied' ? '✓ Copied' : '↗ Share'}
+            </button>
           </div>
 
           {/* Domain filter pills — sits between stats bar (top) and legend (bottom) */}
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[1001] flex items-center gap-1 flex-wrap justify-center px-3 pointer-events-auto max-w-2xl">
             {DOMAINS.map(d => {
-              const active = selectedDomain === d.id;
+              const active = mounted && selectedDomain === d.id;
               return (
                 <button
                   key={String(d.id)}
