@@ -511,6 +511,270 @@ function Onboarding({ onComplete }) {
     `;
 }
 
+// ============== Settings: Event History (Pro) ==============
+function HistoryPanel({ tier }) {
+    const [days, setDays] = useState('90');
+    const [country, setCountry] = useState('');
+    const [result, setResult] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [err, setErr] = useState(null);
+
+    const load = useCallback(async () => {
+        setLoading(true); setErr(null);
+        try {
+            const r = await API.getHistory({
+                days: Number(days),
+                country: country.trim() || undefined,
+                limit: 200,
+            });
+            setResult(r);
+        } catch (e) { setErr(e.message); }
+        setLoading(false);
+    }, [days, country]);
+
+    const sevClass = s => s >= 8 ? 'sev-high' : s >= 5 ? 'sev-med' : 'sev-low';
+
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>📚 Event History</h3>
+                <span class="badge ${tier?.tier || ''}">${tier?.tier || '…'}</span>
+            </div>
+            <p class="panel-sub">Look back through the archive. Free: 1 day · Pro: 90 days · Enterprise: 365 days.</p>
+            <div class="form-row">
+                <select value=${days} onChange=${e => setDays(e.target.value)}>
+                    <option value="1">Last 24 hours</option>
+                    <option value="7">Last 7 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="365">Last 365 days</option>
+                </select>
+                <input placeholder="Country (optional)" value=${country}
+                    onInput=${e => setCountry(e.target.value)} />
+                <button class="btn-sm" onClick=${load} disabled=${loading}>
+                    ${loading ? 'Loading…' : 'Load'}
+                </button>
+            </div>
+            ${err && htmlx`<p class="msg err">${err}</p>`}
+            ${result && htmlx`
+                <div class="history-meta">
+                    ${result.events.length} events · window ${result.days}d (max ${result.max_days}d on ${result.tier})
+                    ${result.truncated ? htmlx`<span class="warn"> — upgrade for a longer window</span>` : ''}
+                </div>
+                <div class="history-list">
+                    ${result.events.length === 0
+                        ? htmlx`<p class="muted">No events in this window.</p>`
+                        : result.events.slice(0, 120).map(ev => htmlx`
+                            <div class="history-item" key=${ev.id}>
+                                <span class="sev ${sevClass(ev.severity)}">${ev.severity}</span>
+                                <div>
+                                    <div class="history-headline">${ev.headline}</div>
+                                    <div class="history-sub">${ev.country} · ${ev.domain} · ${new Date(ev.timestamp).toLocaleString()}</div>
+                                </div>
+                            </div>
+                        `)}
+                </div>
+            `}
+        </div>
+    `;
+}
+
+// ============== Settings: Slack / Telegram delivery (paid) ==============
+function NotificationsPanel({ isPaid }) {
+    const [status, setStatus] = useState(null);
+    const [slack, setSlack] = useState('');
+    const [tgToken, setTgToken] = useState('');
+    const [tgChat, setTgChat] = useState('');
+    const [msg, setMsg] = useState(null);
+    const [saving, setSaving] = useState(false);
+
+    const refresh = useCallback(() => {
+        API.getNotifications().then(setStatus).catch(() => {});
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const save = useCallback(async () => {
+        // Only send fields the user filled — absent = unchanged server-side.
+        const payload = {};
+        if (slack.trim()) payload.slack_webhook_url = slack.trim();
+        if (tgToken.trim()) payload.telegram_bot_token = tgToken.trim();
+        if (tgChat.trim()) payload.telegram_chat_id = tgChat.trim();
+        if (Object.keys(payload).length === 0) {
+            setMsg({ ok: false, text: 'Enter at least one value to save.' });
+            return;
+        }
+        setSaving(true); setMsg(null);
+        try {
+            const r = await API.setNotifications(payload);
+            setStatus(r);
+            setMsg({ ok: true, text: 'Channels saved. Matching alerts will be delivered.' });
+            setSlack(''); setTgToken(''); setTgChat('');
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+        setSaving(false);
+    }, [slack, tgToken, tgChat]);
+
+    const clearChannel = useCallback(async (kind) => {
+        const payload = kind === 'slack'
+            ? { slack_webhook_url: '' }
+            : { telegram_bot_token: '', telegram_chat_id: '' };
+        setMsg(null);
+        try {
+            const r = await API.setNotifications(payload);
+            setStatus(r);
+            setMsg({ ok: true, text: 'Channel cleared.' });
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+    }, []);
+
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>🔔 Alert Delivery</h3>
+                ${status && htmlx`<span class="badge ${status.delivery_enabled ? 'enterprise' : ''}">
+                    ${status.delivery_enabled ? 'active' : 'paid only'}</span>`}
+            </div>
+            <p class="panel-sub">Push alerts that match your subscriptions to Slack and Telegram.</p>
+            ${status && htmlx`
+                <div class="status-row">
+                    <span class="chip ${status.slack_configured ? 'on' : ''}">
+                        ${status.slack_configured ? '✓' : '○'} Slack
+                        ${status.slack_configured ? htmlx`<button class="btn-sm ghost" style="padding:0.1rem 0.4rem;margin-left:0.3rem;" onClick=${() => clearChannel('slack')}>clear</button>` : ''}
+                    </span>
+                    <span class="chip ${status.telegram_configured ? 'on' : ''}">
+                        ${status.telegram_configured ? '✓' : '○'} Telegram
+                        ${status.telegram_chat_id ? htmlx`<span class="muted">(chat ${status.telegram_chat_id})</span>` : ''}
+                        ${status.telegram_configured ? htmlx`<button class="btn-sm ghost" style="padding:0.1rem 0.4rem;margin-left:0.3rem;" onClick=${() => clearChannel('telegram')}>clear</button>` : ''}
+                    </span>
+                </div>
+            `}
+            ${!isPaid ? htmlx`
+                <p class="muted">Slack & Telegram delivery is a <span class="warn">Pro</span> feature. Upgrade to enable push alerts.</p>
+            ` : htmlx`
+                <div class="field">
+                    <label>Slack incoming webhook URL</label>
+                    <input placeholder="https://hooks.slack.com/services/…" value=${slack}
+                        onInput=${e => setSlack(e.target.value)} />
+                </div>
+                <div class="field">
+                    <label>Telegram bot token</label>
+                    <input placeholder="123456:ABC-DEF…" value=${tgToken}
+                        onInput=${e => setTgToken(e.target.value)} />
+                </div>
+                <div class="field">
+                    <label>Telegram chat id</label>
+                    <input placeholder="987654321" value=${tgChat}
+                        onInput=${e => setTgChat(e.target.value)} />
+                </div>
+                <button class="btn-sm" onClick=${save} disabled=${saving}>
+                    ${saving ? 'Saving…' : 'Save channels'}
+                </button>
+                <p class="muted" style="margin-top:0.5rem;">Existing secrets are never shown. Leave a field blank to keep it unchanged.</p>
+            `}
+            ${msg && htmlx`<p class="msg ${msg.ok ? 'ok' : 'err'}">${msg.text}</p>`}
+        </div>
+    `;
+}
+
+// ============== Settings: API keys (Enterprise) ==============
+function ApiKeysPanel() {
+    const [keys, setKeys] = useState([]);
+    const [name, setName] = useState('');
+    const [created, setCreated] = useState(null);
+    const [err, setErr] = useState(null);
+    const [busy, setBusy] = useState(false);
+
+    const refresh = useCallback(() => {
+        API.listKeys().then(setKeys).catch(() => {});
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const create = useCallback(async () => {
+        setBusy(true); setErr(null);
+        try {
+            const r = await API.createKey(name.trim() || undefined);
+            setCreated(r);
+            setName('');
+            refresh();
+        } catch (e) { setErr(e.message); }
+        setBusy(false);
+    }, [name, refresh]);
+
+    const revoke = useCallback(async (id) => {
+        setErr(null);
+        try { await API.revokeKey(id); refresh(); }
+        catch (e) { setErr(e.message); }
+    }, [refresh]);
+
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>🔑 API Keys</h3>
+                <span class="badge enterprise">enterprise</span>
+            </div>
+            <p class="panel-sub">Programmatic access. Send a key as <code>Authorization: Bearer wm_…</code> or <code>X-API-Key</code>.</p>
+            ${created && htmlx`
+                <div class="key-reveal">
+                    <strong>Copy your new key now — it won't be shown again.</strong>
+                    <code>${created.key}</code>
+                    <button class="btn-sm ghost" onClick=${() => setCreated(null)}>Done</button>
+                </div>
+            `}
+            <div class="form-row">
+                <input placeholder="Key name (e.g. ci-pipeline)" value=${name}
+                    onInput=${e => setName(e.target.value)} />
+                <button class="btn-sm" onClick=${create} disabled=${busy}>
+                    ${busy ? 'Creating…' : 'Create key'}
+                </button>
+            </div>
+            ${err && htmlx`<p class="msg err">${err}</p>`}
+            ${keys.length === 0
+                ? htmlx`<p class="muted">No keys yet.</p>`
+                : keys.map(k => htmlx`
+                    <div class="key-row" key=${k.id}>
+                        <div>
+                            <span class="key-mono ${k.revoked ? 'key-revoked' : ''}">${k.prefix}…</span>
+                            <div class="key-meta">
+                                ${k.name || 'unnamed'} · created ${k.created_at ? new Date(k.created_at).toLocaleDateString() : '—'}
+                                ${k.last_used_at ? ` · last used ${new Date(k.last_used_at).toLocaleDateString()}` : ' · never used'}
+                                ${k.revoked ? ' · revoked' : ''}
+                            </div>
+                        </div>
+                        ${!k.revoked && htmlx`<button class="btn-sm danger" onClick=${() => revoke(k.id)}>Revoke</button>`}
+                    </div>
+                `)}
+        </div>
+    `;
+}
+
+// ============== Settings: locked upsell for lower tiers ==============
+function LockedPanel({ icon, title, need, desc }) {
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head"><h3>${title}</h3><span class="badge">${need}</span></div>
+            <div class="locked">
+                <div class="lock-icon">${icon}</div>
+                <p class="muted">${desc}</p>
+                <p class="muted">Available on the <span class="warn">${need}</span> plan.</p>
+            </div>
+        </div>
+    `;
+}
+
+// ============== Settings view ==============
+function Settings({ tier }) {
+    const isPaid = !!tier && tier.tier !== 'free';
+    const isEnterprise = !!tier && tier.tier === 'enterprise';
+    return htmlx`
+        <div class="settings fade-in">
+            <${HistoryPanel} tier=${tier} />
+            <${NotificationsPanel} isPaid=${isPaid} />
+            ${isEnterprise
+                ? htmlx`<${ApiKeysPanel} />`
+                : htmlx`<${LockedPanel} icon="🔑" title="API Keys" need="Enterprise"
+                    desc="Issue wm_ API keys for programmatic access to the intelligence feed and history." />`}
+        </div>
+    `;
+}
+
 // ============== Main App ==============
 function App() {
     const [view, setView] = useState('onboarding');
@@ -694,10 +958,15 @@ function App() {
                     onClick=${handleBack}>
                     🌍 Global Map
                 </button>
-                <button 
+                <button
                     class=${view === 'brief' ? 'active' : ''}
                     onClick=${() => setView('brief')}>
                     📋 Daily Brief
+                </button>
+                <button
+                    class=${view === 'settings' ? 'active' : ''}
+                    onClick=${() => setView('settings')}>
+                    ⚙️ Settings
                 </button>
             </div>
             
@@ -714,10 +983,13 @@ function App() {
                     </div>
                 `}
                 ${view === 'brief' && htmlx`
-                    <${BriefView} 
-                        country=${selectedCountry || 'Global'} 
+                    <${BriefView}
+                        country=${selectedCountry || 'Global'}
                         onBack=${handleBack}
                     />
+                `}
+                ${view === 'settings' && htmlx`
+                    <${Settings} tier=${tier} />
                 `}
             </div>
         </div>
