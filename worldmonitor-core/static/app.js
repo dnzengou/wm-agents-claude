@@ -78,6 +78,76 @@ const API = {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Checkout failed');
         return data;
+    },
+
+    // ---- Paid-tier features -------------------------------------------------
+
+    // Tier-scoped event archive (Free 1d · Pro 90d · Enterprise 365d).
+    async getHistory({ days = 90, country, limit = 500 } = {}) {
+        const q = new URLSearchParams({ days: String(days), limit: String(limit) });
+        if (country) q.set('country', country);
+        const res = await fetch(`${this.baseUrl}/api/history?${q}`, {
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to load history');
+        return data;
+    },
+
+    // Current Slack/Telegram delivery status (secrets never returned).
+    async getNotifications() {
+        const res = await fetch(`${this.baseUrl}/api/notifications`, {
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to load channels');
+        return data;
+    },
+
+    // Patch delivery channels (paid tiers). Absent field = unchanged, "" = clear.
+    async setNotifications(channels) {
+        const res = await fetch(`${this.baseUrl}/api/notifications`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
+            body: JSON.stringify(channels)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to save channels');
+        return data;
+    },
+
+    // Enterprise API keys.
+    async listKeys() {
+        const res = await fetch(`${this.baseUrl}/api/keys`, {
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to list keys');
+        return data.keys || [];
+    },
+
+    // Returns the raw key exactly once — surface it to the user immediately.
+    async createKey(name) {
+        const res = await fetch(`${this.baseUrl}/api/keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to create key');
+        return data;
+    },
+
+    async revokeKey(id) {
+        const res = await fetch(`${this.baseUrl}/api/keys/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        if (!res.ok && res.status !== 204) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed to revoke key');
+        }
+        return true;
     }
 };
 
