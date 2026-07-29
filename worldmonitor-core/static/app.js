@@ -335,6 +335,220 @@ function MapView({ data, onSelect }) {
     `;
 }
 
+// ============== 3D Globe Component (dependency-free canvas) ==============
+// Orthographic projection of an auto-rotating sphere. No WebGL, no libraries —
+// keeps the "29x lighter" ethos while giving the intelligence feed a real globe.
+function GlobeView({ data, onSelect }) {
+    const canvasRef = useRef(null);
+    const [tooltip, setTooltip] = useState(null);
+    // Mutable render state kept in a ref so the rAF loop never re-subscribes.
+    const s = useRef({ lon0: 0, lat0: 18, dragging: false, moved: 0, lastX: 0, lastY: 0,
+        w: 0, h: 0, cx: 0, cy: 0, r: 0 });
+
+    // Orthographic projection of (lat,lon) with current rotation. z>=0 => front.
+    const project = (st, lat, lon) => {
+        const lam = (lon - st.lon0) * Math.PI / 180;
+        const phi = lat * Math.PI / 180;
+        const p0 = st.lat0 * Math.PI / 180;
+        const cphi = Math.cos(phi), sphi = Math.sin(phi);
+        const clam = Math.cos(lam), slam = Math.sin(lam);
+        const x = cphi * slam;
+        const y = Math.cos(p0) * sphi - Math.sin(p0) * cphi * clam;
+        const z = Math.sin(p0) * sphi + Math.cos(p0) * cphi * clam;
+        return { x: st.cx + st.r * x, y: st.cy - st.r * y, z };
+    };
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let raf;
+
+        const resize = () => {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const st = s.current;
+            st.w = rect.width; st.h = rect.height;
+            st.cx = rect.width / 2; st.cy = rect.height / 2;
+            st.r = Math.min(rect.width, rect.height) * 0.42;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        const strokeArc = (st, coords) => {
+            ctx.beginPath();
+            let started = false;
+            for (const [lat, lon] of coords) {
+                const p = project(st, lat, lon);
+                if (p.z >= 0) {
+                    if (started) ctx.lineTo(p.x, p.y);
+                    else { ctx.moveTo(p.x, p.y); started = true; }
+                } else started = false;
+            }
+            ctx.stroke();
+        };
+
+        const draw = () => {
+            const st = s.current;
+            if (!st.dragging) st.lon0 = (st.lon0 + 0.12) % 360;
+
+            ctx.clearRect(0, 0, st.w, st.h);
+            ctx.fillStyle = '#0a0a0f';
+            ctx.fillRect(0, 0, st.w, st.h);
+            const { cx, cy, r } = st;
+
+            // Atmosphere halo
+            const atm = ctx.createRadialGradient(cx, cy, r * 0.92, cx, cy, r * 1.16);
+            atm.addColorStop(0, 'rgba(59,130,246,0.28)');
+            atm.addColorStop(1, 'rgba(59,130,246,0)');
+            ctx.fillStyle = atm;
+            ctx.beginPath(); ctx.arc(cx, cy, r * 1.16, 0, Math.PI * 2); ctx.fill();
+
+            // Ocean sphere, lit from top-left for a 3D read
+            const oc = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
+            oc.addColorStop(0, '#1e3a5f');
+            oc.addColorStop(1, '#0b1220');
+            ctx.fillStyle = oc;
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+            // Graticule (front hemisphere only), clipped to the disc
+            ctx.save();
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+            ctx.strokeStyle = 'rgba(148,163,184,0.16)';
+            ctx.lineWidth = 1;
+            for (let lon = -180; lon < 180; lon += 30) {
+                const arc = [];
+                for (let lat = -90; lat <= 90; lat += 3) arc.push([lat, lon]);
+                strokeArc(st, arc);
+            }
+            for (let lat = -60; lat <= 60; lat += 30) {
+                const arc = [];
+                for (let lon = -180; lon <= 180; lon += 3) arc.push([lat, lon]);
+                strokeArc(st, arc);
+            }
+            ctx.restore();
+
+            // Event points — hidden on the far side, dimmed toward the limb
+            data.forEach(ev => {
+                const p = project(st, ev.lat, ev.lon);
+                if (p.z < 0) return;
+                const depth = 0.35 + 0.65 * p.z;
+                const rad = Math.max(4, ev.severity * 2.2);
+                const c = ev.severity >= 8 ? '239,68,68' : ev.severity >= 5 ? '245,158,11' : '59,130,246';
+                const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad * 2);
+                g.addColorStop(0, `rgba(${c},${0.9 * depth})`);
+                g.addColorStop(0.5, `rgba(${c},${0.35 * depth})`);
+                g.addColorStop(1, `rgba(${c},0)`);
+                ctx.fillStyle = g;
+                ctx.beginPath(); ctx.arc(p.x, p.y, rad * 2, 0, Math.PI * 2); ctx.fill();
+                if (ev.severity >= 7) {
+                    ctx.fillStyle = `rgba(${c},${depth})`;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill();
+                }
+            });
+
+            raf = requestAnimationFrame(draw);
+        };
+        draw();
+
+        return () => {
+            cancelAnimationFrame(raf);
+            window.removeEventListener('resize', resize);
+        };
+    }, [data]);
+
+    // Pointer: drag to spin, tap to select the nearest visible event.
+    const onDown = useCallback((e) => {
+        const st = s.current;
+        st.dragging = true; st.moved = 0;
+        st.lastX = e.clientX; st.lastY = e.clientY;
+    }, []);
+    const onMove = useCallback((e) => {
+        const st = s.current;
+        if (!st.dragging) return;
+        const dx = e.clientX - st.lastX, dy = e.clientY - st.lastY;
+        st.moved += Math.abs(dx) + Math.abs(dy);
+        st.lon0 -= dx * 0.4;
+        st.lat0 = Math.max(-85, Math.min(85, st.lat0 + dy * 0.3));
+        st.lastX = e.clientX; st.lastY = e.clientY;
+    }, []);
+    const onUp = useCallback((e) => {
+        const st = s.current;
+        st.dragging = false;
+        if (st.moved > 6 || !data) return; // a drag, not a tap
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        let closest = null, min = Infinity;
+        data.forEach(ev => {
+            const p = project(st, ev.lat, ev.lon);
+            if (p.z < 0) return;
+            const d = Math.hypot(x - p.x, y - p.y);
+            if (d < 22 && d < min) { min = d; closest = ev; }
+        });
+        if (closest) {
+            onSelect(closest);
+            setTooltip({
+                x: Math.min(x + 10, st.w - 230),
+                y: Math.max(y - 100, 10),
+                data: closest,
+            });
+            setTimeout(() => setTooltip(null), 4000);
+        }
+    }, [data, onSelect]);
+
+    const high = data.filter(e => e.severity >= 8).length;
+    const med = data.filter(e => e.severity >= 5 && e.severity < 8).length;
+
+    return htmlx`
+        <div class="heatmap">
+            <canvas
+                ref=${canvasRef}
+                style="width:100%;height:100%;cursor:grab;touch-action:none;"
+                onPointerDown=${onDown}
+                onPointerMove=${onMove}
+                onPointerUp=${onUp}
+                onPointerLeave=${() => { s.current.dragging = false; }}
+            />
+            ${tooltip && htmlx`
+                <div class="country-popup" style="left: ${tooltip.x}px; top: ${tooltip.y}px;">
+                    <h4>${tooltip.data.country}</h4>
+                    <p>${tooltip.data.headline}</p>
+                    <span class="severity ${tooltip.data.severity >= 8 ? 'high' : tooltip.data.severity >= 5 ? 'medium' : 'low'}">
+                        ${tooltip.data.severity >= 8 ? '🔴' : tooltip.data.severity >= 5 ? '🟠' : '🔵'}
+                        Severity: ${tooltip.data.severity}/10
+                    </span>
+                </div>
+            `}
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot high"></div><span>Critical (${high})</span></div>
+                <div class="legend-item"><div class="legend-dot medium"></div><span>Elevated (${med})</span></div>
+                <div class="legend-item"><div class="legend-dot low"></div><span>Monitoring</span></div>
+            </div>
+            <div class="globe-hint">Drag to rotate · tap a marker</div>
+        </div>
+    `;
+}
+
+// ============== Map wrapper: 3D globe / flat toggle ==============
+function WorldMap({ data, onSelect }) {
+    const [mode, setMode] = useState('globe');
+    return htmlx`
+        <div class="map-wrap">
+            <div class="map-toggle">
+                <button class=${mode === 'globe' ? 'active' : ''} onClick=${() => setMode('globe')}>🌐 Globe</button>
+                <button class=${mode === 'flat' ? 'active' : ''} onClick=${() => setMode('flat')}>🗺️ Flat</button>
+            </div>
+            ${mode === 'globe'
+                ? htmlx`<${GlobeView} data=${data} onSelect=${onSelect} />`
+                : htmlx`<${MapView} data=${data} onSelect=${onSelect} />`}
+        </div>
+    `;
+}
+
 // ============== Brief Component ==============
 function BriefView({ country, onBack }) {
     const [brief, setBrief] = useState(null);
@@ -972,9 +1186,9 @@ function App() {
             
             <div class="content">
                 ${view === 'map' && htmlx`
-                    <${MapView} 
-                        data=${data} 
-                        onSelect=${handleCountrySelect} 
+                    <${WorldMap}
+                        data=${data}
+                        onSelect=${handleCountrySelect}
                     />
                     <div class="stats-bar">
                         <span>📊 ${data.length} events tracked</span>

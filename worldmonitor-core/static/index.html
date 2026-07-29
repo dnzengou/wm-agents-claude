@@ -588,6 +588,46 @@
         }
         .locked { text-align: center; padding: 0.5rem 0; }
         .locked .lock-icon { font-size: 1.5rem; margin-bottom: 0.4rem; }
+
+        /* ===== Map: 3D globe / flat toggle ===== */
+        .map-wrap { position: relative; }
+        .map-toggle {
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            z-index: 20;
+            display: flex;
+            gap: 0.25rem;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid var(--border-color);
+            border-radius: 9999px;
+            padding: 0.2rem;
+            backdrop-filter: blur(4px);
+        }
+        .map-toggle button {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.35rem 0.7rem;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .map-toggle button.active { background: var(--accent-blue); color: #fff; }
+        .globe-hint {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--border-color);
+            border-radius: 9999px;
+            padding: 0.3rem 0.7rem;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
