@@ -1,4 +1,69 @@
 
+Good. The plan: capture `<link>` from every RSS item in the parser → store in SQLite `link` column → surface as clickable source buttons in the map popup and live feed cards. Both `with_link()` builder and the Atom `href` attribute case need handling.
+
+Now I have everything I need. Let me implement all changes in one batch — 6 files simultaneously:
+
+Now update `parse_rss_xml` to also return the article link, and wire it into `fetch_single_feed`:
+
+Update `fetch_single_feed` to destructure the new triple and call `with_link`:
+
+Now all 5 frontend files — `api.ts`, `GlobalLiveFeed.tsx`, `DashboardClient.tsx`, `WorldMap.tsx`, `WorldMap.css`:
+
+Now add the source link button in the event card footer — it appears as a right-aligned `Source ↗` link:
+
+Propagate `link` in `toLiveEvent` inside DashboardClient:
+
+Now update WorldMap — add `link` to markers and render a clickable source link in the popup:
+
+Now add the popup CSS classes to `WorldMap.css`:
+
+Verify both compile:
+
+Zero errors. Commit, push, deploy:
+
+Live. Let me verify the backend has a link field in the API response now:
+
+The existing cached SQLite events predate the `link` column — Railway needs to complete its build and run a fresh ingest cycle. Let me verify Railway actually deployed:
+
+The `link` field is live in the API — all 11 keys present including `link`. Current values are `null` because they're cached events from the previous ingest cycle (pre-new-binary). The background task runs every ~5 minutes; the next cycle will write fresh RSS events with real article URLs.
+
+---
+
+**✅ Source links shipped and live**
+
+**Deployments:**
+
+| | URL |
+|---|---|
+| 🌐 **Frontend** | **https://worldmonitor-core.vercel.app** |
+| ⚙️ **Backend API** | **https://wm-agents-claude-production.up.railway.app** |
+| 📦 **Source code** | **https://github.com/dnzengou/wm-agents-claude** (branch: `main`, commit `46f5efa`) |
+
+---
+
+**What's now in the UI:**
+
+**Map popups** (click any dot on the map):
+- Headline is now a **clickable link** to the original article when available
+- Meta row shows: `[SOURCE TAG]` · `domain` · **`Read source ↗`** button in neon
+
+**Live feed cards** (left panel):
+- Footer row now has a right-aligned **`Source ↗`** link for every RSS event
+- Clicking it opens the original article in a new tab without closing the event card
+- GDELT events (no article URL) show no link — by design
+
+**How links are captured:**
+- RSS 2.0 `<link>` text content → stored directly
+- Atom `<link href="…" rel="alternate"/>` → attribute extracted
+- Stored in SQLite `link TEXT` column (nullable; NULL for GDELT events)
+- Returned in the `/api/intelligence` JSON as `link?: string`
+
+The link field is now confirmed in the live API response. Links will appear on the next RSS ingest cycle (~5 minutes from now) as new events replace cached ones.
+
+
+***
+***
+
 
 Let me read current models to plan the word-boundary fix precisely:
 
