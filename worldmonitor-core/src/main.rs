@@ -4,7 +4,7 @@
 #![allow(dead_code, clippy::unnecessary_sort_by)]
 
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use std::net::SocketAddr;
@@ -16,12 +16,16 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info, warn};
 
 mod api;
+mod auth;
 mod cache;
 mod core;
 mod db;
 mod models;
+mod notify;
 
-use api::{alerts, billing, brief, geo, intelligence, sse, sync, user};
+use api::{
+    alerts, billing, brief, geo, history, intelligence, keys, notifications, sse, sync, user,
+};
 use cache::Cache;
 use db::Database;
 use models::IntelEvent;
@@ -44,6 +48,11 @@ pub struct AppConfig {
     pub port: u16,
     pub database_url: String,
     pub max_alerts_free: i32,
+    /// How long events are retained (days). Must be >= the largest tier history
+    /// window (365 for Enterprise) for that window to actually have data.
+    pub history_retention_days: i64,
+    /// Historical lookback the free tier is limited to (days).
+    pub history_free_days: i64,
     // ── Stripe billing ──────────────────────────────────────────────────────
     /// Publishable key (`pk_live_…` / `pk_test_…`). Public by design — served to
     /// clients via `GET /api/billing/config` for client-side Stripe.js. Not a
@@ -86,6 +95,14 @@ impl AppConfig {
                 .unwrap_or_else(|_| "3".to_string())
                 .parse()
                 .unwrap_or(3),
+            history_retention_days: std::env::var("HISTORY_RETENTION_DAYS")
+                .unwrap_or_else(|_| "90".to_string())
+                .parse()
+                .unwrap_or(90),
+            history_free_days: std::env::var("HISTORY_FREE_DAYS")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse()
+                .unwrap_or(1),
             stripe_publishable_key: std::env::var("STRIPE_PUBLISHABLE_KEY").unwrap_or_default(),
             stripe_secret_key: std::env::var("STRIPE_SECRET_KEY").unwrap_or_default(),
             stripe_webhook_secret: std::env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_default(),
@@ -192,6 +209,11 @@ async fn ingest_once(state: &AppState) {
                 events.len(),
                 inserted
             );
+            // Fan matching new events out to Slack/Telegram before we hand the
+            // batch to the broadcast channel. Idempotent per (user, event), so
+            // overlapping re-fuses never double-notify.
+            notify::dispatch_alerts(state, &events).await;
+
             // Broadcast to all SSE subscribers (Kafka-style fan-out).
             // send() only errors when 0 receivers exist — that's normal when no
             // clients are connected, so we silently discard the error.
@@ -200,8 +222,12 @@ async fn ingest_once(state: &AppState) {
         Err(e) => error!("Failed to persist ingested events: {}", e),
     }
 
-    // Purge events older than 30 days
-    match state.db.cleanup_old_events().await {
+    // Purge events older than the configured retention window.
+    match state
+        .db
+        .cleanup_old_events(state.config.history_retention_days)
+        .await
+    {
         Ok(deleted) if deleted > 0 => info!("Pruned {} stale events", deleted),
         Err(e) => error!("Cleanup error: {}", e),
         _ => {}
@@ -277,6 +303,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/alerts", post(alerts::handler))
         .route("/api/sync", get(sync::handler))
         .route("/api/user", get(user::get_handler).post(user::post_handler))
+        // ── Paid-tier features ───────────────────────────────────────────────
+        // 90-day history (Pro), API keys (Enterprise), Slack/Telegram delivery.
+        .route("/api/history", get(history::handler))
+        .route(
+            "/api/keys",
+            get(keys::list_handler).post(keys::create_handler),
+        )
+        .route("/api/keys/:id", delete(keys::revoke_handler))
+        .route(
+            "/api/notifications",
+            get(notifications::get_handler).post(notifications::post_handler),
+        )
         // ── Stripe billing ──────────────────────────────────────────────────
         .route("/api/billing/config", get(billing::config_handler))
         .route("/api/billing/tier", get(billing::tier_handler))

@@ -152,6 +152,77 @@ Subscribe to country alerts (free tier: 3 max).
 ### GET/POST /api/user
 User profile and preferences with streak tracking.
 
+### GET /api/history
+Tier-scoped access to the event archive. The requested window is clamped to the
+caller's tier ceiling — **Free 1 day · Pro 90 days · Enterprise 365 days**.
+
+**Query params:** `days` (default 7), `country` (optional filter), `limit` (default 500, max 5000).
+
+**Auth:** `X-User-Id` header, or an Enterprise API key (see below).
+
+```bash
+curl "http://localhost:8080/api/history?days=90&country=Ukraine" \
+  -H "X-User-Id: user-123"
+```
+
+**Response:**
+```json
+{
+  "events": [ /* IntelEvent[] */ ],
+  "days": 90,
+  "max_days": 90,
+  "tier": "pro",
+  "truncated": false
+}
+```
+`truncated` is `true` when the request asked for more history than the tier allows.
+
+### API Keys (Enterprise) — `/api/keys`
+Programmatic access tokens. Tokens are `wm_…`; only a SHA-256 hash is stored, so
+the raw key is shown **once** at creation. Present a key as either
+`Authorization: Bearer wm_…` or `X-API-Key: wm_…` on any endpoint.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `/api/keys` | Mint a key (**Enterprise only**). Body: `{ "name": "ci-pipeline" }`. Returns the raw `key` once. |
+| `GET` | `/api/keys` | List the caller's keys (secrets redacted). |
+| `DELETE` | `/api/keys/:id` | Revoke a key you own. |
+
+```bash
+# Mint a key, then call the API with it
+curl -X POST http://localhost:8080/api/keys \
+  -H "X-User-Id: ent-user" -H "Content-Type: application/json" \
+  -d '{"name":"ci"}'
+# → { "id": "...", "key": "wm_1a2b...", "prefix": "wm_1a2b3c4d", ... }
+
+curl "http://localhost:8080/api/history?days=365" \
+  -H "Authorization: Bearer wm_1a2b..."
+```
+
+### Slack / Telegram delivery — `/api/notifications`
+Push matching alerts to Slack (incoming webhook) and/or Telegram (bot). Delivery
+is a **paid feature**; configuring channels requires Pro or Enterprise. Secrets
+are never echoed back.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/notifications` | Channel status: `slack_configured`, `telegram_configured`, `telegram_chat_id`, `delivery_enabled`. |
+| `POST` | `/api/notifications` | Set channels (paid). Absent field = unchanged; empty string = clear. |
+
+```bash
+curl -X POST http://localhost:8080/api/notifications \
+  -H "X-User-Id: pro-user" -H "Content-Type: application/json" \
+  -d '{
+    "slack_webhook_url": "https://hooks.slack.com/services/T00/B00/xxx",
+    "telegram_bot_token": "123:ABC",
+    "telegram_chat_id": "987654"
+  }'
+```
+
+Once configured, the ingestion loop pushes any newly-fused event that matches one
+of your `/api/alerts` subscriptions (country + severity threshold). Delivery is
+idempotent per `(user, event)`, so overlapping re-fetches never double-notify.
+
 ## 🗄️ Database Schema
 
 ```sql
@@ -224,6 +295,8 @@ CREATE TABLE alerts (
 | `DATABASE_URL` | SQLite connection string | sqlite:./worldmonitor.db |
 | `GROQ_API_KEY` | Groq API key for AI briefs | (empty) |
 | `MAX_ALERTS_FREE` | Free tier alert limit | 3 |
+| `HISTORY_RETENTION_DAYS` | Days of events retained (must cover the largest tier window) | 90 |
+| `HISTORY_FREE_DAYS` | History lookback allowed on the free tier | 1 |
 | `RUST_LOG` | Log level | info |
 
 ## 🧪 Testing

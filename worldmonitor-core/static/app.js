@@ -78,6 +78,76 @@ const API = {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Checkout failed');
         return data;
+    },
+
+    // ---- Paid-tier features -------------------------------------------------
+
+    // Tier-scoped event archive (Free 1d · Pro 90d · Enterprise 365d).
+    async getHistory({ days = 90, country, limit = 500 } = {}) {
+        const q = new URLSearchParams({ days: String(days), limit: String(limit) });
+        if (country) q.set('country', country);
+        const res = await fetch(`${this.baseUrl}/api/history?${q}`, {
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to load history');
+        return data;
+    },
+
+    // Current Slack/Telegram delivery status (secrets never returned).
+    async getNotifications() {
+        const res = await fetch(`${this.baseUrl}/api/notifications`, {
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to load channels');
+        return data;
+    },
+
+    // Patch delivery channels (paid tiers). Absent field = unchanged, "" = clear.
+    async setNotifications(channels) {
+        const res = await fetch(`${this.baseUrl}/api/notifications`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
+            body: JSON.stringify(channels)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to save channels');
+        return data;
+    },
+
+    // Enterprise API keys.
+    async listKeys() {
+        const res = await fetch(`${this.baseUrl}/api/keys`, {
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to list keys');
+        return data.keys || [];
+    },
+
+    // Returns the raw key exactly once — surface it to the user immediately.
+    async createKey(name) {
+        const res = await fetch(`${this.baseUrl}/api/keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to create key');
+        return data;
+    },
+
+    async revokeKey(id) {
+        const res = await fetch(`${this.baseUrl}/api/keys/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: { 'X-User-Id': 'anonymous' }
+        });
+        if (!res.ok && res.status !== 204) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed to revoke key');
+        }
+        return true;
     }
 };
 
@@ -265,6 +335,220 @@ function MapView({ data, onSelect }) {
     `;
 }
 
+// ============== 3D Globe Component (dependency-free canvas) ==============
+// Orthographic projection of an auto-rotating sphere. No WebGL, no libraries —
+// keeps the "29x lighter" ethos while giving the intelligence feed a real globe.
+function GlobeView({ data, onSelect }) {
+    const canvasRef = useRef(null);
+    const [tooltip, setTooltip] = useState(null);
+    // Mutable render state kept in a ref so the rAF loop never re-subscribes.
+    const s = useRef({ lon0: 0, lat0: 18, dragging: false, moved: 0, lastX: 0, lastY: 0,
+        w: 0, h: 0, cx: 0, cy: 0, r: 0 });
+
+    // Orthographic projection of (lat,lon) with current rotation. z>=0 => front.
+    const project = (st, lat, lon) => {
+        const lam = (lon - st.lon0) * Math.PI / 180;
+        const phi = lat * Math.PI / 180;
+        const p0 = st.lat0 * Math.PI / 180;
+        const cphi = Math.cos(phi), sphi = Math.sin(phi);
+        const clam = Math.cos(lam), slam = Math.sin(lam);
+        const x = cphi * slam;
+        const y = Math.cos(p0) * sphi - Math.sin(p0) * cphi * clam;
+        const z = Math.sin(p0) * sphi + Math.cos(p0) * cphi * clam;
+        return { x: st.cx + st.r * x, y: st.cy - st.r * y, z };
+    };
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let raf;
+
+        const resize = () => {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const st = s.current;
+            st.w = rect.width; st.h = rect.height;
+            st.cx = rect.width / 2; st.cy = rect.height / 2;
+            st.r = Math.min(rect.width, rect.height) * 0.42;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        const strokeArc = (st, coords) => {
+            ctx.beginPath();
+            let started = false;
+            for (const [lat, lon] of coords) {
+                const p = project(st, lat, lon);
+                if (p.z >= 0) {
+                    if (started) ctx.lineTo(p.x, p.y);
+                    else { ctx.moveTo(p.x, p.y); started = true; }
+                } else started = false;
+            }
+            ctx.stroke();
+        };
+
+        const draw = () => {
+            const st = s.current;
+            if (!st.dragging) st.lon0 = (st.lon0 + 0.12) % 360;
+
+            ctx.clearRect(0, 0, st.w, st.h);
+            ctx.fillStyle = '#0a0a0f';
+            ctx.fillRect(0, 0, st.w, st.h);
+            const { cx, cy, r } = st;
+
+            // Atmosphere halo
+            const atm = ctx.createRadialGradient(cx, cy, r * 0.92, cx, cy, r * 1.16);
+            atm.addColorStop(0, 'rgba(59,130,246,0.28)');
+            atm.addColorStop(1, 'rgba(59,130,246,0)');
+            ctx.fillStyle = atm;
+            ctx.beginPath(); ctx.arc(cx, cy, r * 1.16, 0, Math.PI * 2); ctx.fill();
+
+            // Ocean sphere, lit from top-left for a 3D read
+            const oc = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
+            oc.addColorStop(0, '#1e3a5f');
+            oc.addColorStop(1, '#0b1220');
+            ctx.fillStyle = oc;
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+            // Graticule (front hemisphere only), clipped to the disc
+            ctx.save();
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+            ctx.strokeStyle = 'rgba(148,163,184,0.16)';
+            ctx.lineWidth = 1;
+            for (let lon = -180; lon < 180; lon += 30) {
+                const arc = [];
+                for (let lat = -90; lat <= 90; lat += 3) arc.push([lat, lon]);
+                strokeArc(st, arc);
+            }
+            for (let lat = -60; lat <= 60; lat += 30) {
+                const arc = [];
+                for (let lon = -180; lon <= 180; lon += 3) arc.push([lat, lon]);
+                strokeArc(st, arc);
+            }
+            ctx.restore();
+
+            // Event points — hidden on the far side, dimmed toward the limb
+            data.forEach(ev => {
+                const p = project(st, ev.lat, ev.lon);
+                if (p.z < 0) return;
+                const depth = 0.35 + 0.65 * p.z;
+                const rad = Math.max(4, ev.severity * 2.2);
+                const c = ev.severity >= 8 ? '239,68,68' : ev.severity >= 5 ? '245,158,11' : '59,130,246';
+                const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad * 2);
+                g.addColorStop(0, `rgba(${c},${0.9 * depth})`);
+                g.addColorStop(0.5, `rgba(${c},${0.35 * depth})`);
+                g.addColorStop(1, `rgba(${c},0)`);
+                ctx.fillStyle = g;
+                ctx.beginPath(); ctx.arc(p.x, p.y, rad * 2, 0, Math.PI * 2); ctx.fill();
+                if (ev.severity >= 7) {
+                    ctx.fillStyle = `rgba(${c},${depth})`;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill();
+                }
+            });
+
+            raf = requestAnimationFrame(draw);
+        };
+        draw();
+
+        return () => {
+            cancelAnimationFrame(raf);
+            window.removeEventListener('resize', resize);
+        };
+    }, [data]);
+
+    // Pointer: drag to spin, tap to select the nearest visible event.
+    const onDown = useCallback((e) => {
+        const st = s.current;
+        st.dragging = true; st.moved = 0;
+        st.lastX = e.clientX; st.lastY = e.clientY;
+    }, []);
+    const onMove = useCallback((e) => {
+        const st = s.current;
+        if (!st.dragging) return;
+        const dx = e.clientX - st.lastX, dy = e.clientY - st.lastY;
+        st.moved += Math.abs(dx) + Math.abs(dy);
+        st.lon0 -= dx * 0.4;
+        st.lat0 = Math.max(-85, Math.min(85, st.lat0 + dy * 0.3));
+        st.lastX = e.clientX; st.lastY = e.clientY;
+    }, []);
+    const onUp = useCallback((e) => {
+        const st = s.current;
+        st.dragging = false;
+        if (st.moved > 6 || !data) return; // a drag, not a tap
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        let closest = null, min = Infinity;
+        data.forEach(ev => {
+            const p = project(st, ev.lat, ev.lon);
+            if (p.z < 0) return;
+            const d = Math.hypot(x - p.x, y - p.y);
+            if (d < 22 && d < min) { min = d; closest = ev; }
+        });
+        if (closest) {
+            onSelect(closest);
+            setTooltip({
+                x: Math.min(x + 10, st.w - 230),
+                y: Math.max(y - 100, 10),
+                data: closest,
+            });
+            setTimeout(() => setTooltip(null), 4000);
+        }
+    }, [data, onSelect]);
+
+    const high = data.filter(e => e.severity >= 8).length;
+    const med = data.filter(e => e.severity >= 5 && e.severity < 8).length;
+
+    return htmlx`
+        <div class="heatmap">
+            <canvas
+                ref=${canvasRef}
+                style="width:100%;height:100%;cursor:grab;touch-action:none;"
+                onPointerDown=${onDown}
+                onPointerMove=${onMove}
+                onPointerUp=${onUp}
+                onPointerLeave=${() => { s.current.dragging = false; }}
+            />
+            ${tooltip && htmlx`
+                <div class="country-popup" style="left: ${tooltip.x}px; top: ${tooltip.y}px;">
+                    <h4>${tooltip.data.country}</h4>
+                    <p>${tooltip.data.headline}</p>
+                    <span class="severity ${tooltip.data.severity >= 8 ? 'high' : tooltip.data.severity >= 5 ? 'medium' : 'low'}">
+                        ${tooltip.data.severity >= 8 ? '🔴' : tooltip.data.severity >= 5 ? '🟠' : '🔵'}
+                        Severity: ${tooltip.data.severity}/10
+                    </span>
+                </div>
+            `}
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot high"></div><span>Critical (${high})</span></div>
+                <div class="legend-item"><div class="legend-dot medium"></div><span>Elevated (${med})</span></div>
+                <div class="legend-item"><div class="legend-dot low"></div><span>Monitoring</span></div>
+            </div>
+            <div class="globe-hint">Drag to rotate · tap a marker</div>
+        </div>
+    `;
+}
+
+// ============== Map wrapper: 3D globe / flat toggle ==============
+function WorldMap({ data, onSelect }) {
+    const [mode, setMode] = useState('globe');
+    return htmlx`
+        <div class="map-wrap">
+            <div class="map-toggle">
+                <button class=${mode === 'globe' ? 'active' : ''} onClick=${() => setMode('globe')}>🌐 Globe</button>
+                <button class=${mode === 'flat' ? 'active' : ''} onClick=${() => setMode('flat')}>🗺️ Flat</button>
+            </div>
+            ${mode === 'globe'
+                ? htmlx`<${GlobeView} data=${data} onSelect=${onSelect} />`
+                : htmlx`<${MapView} data=${data} onSelect=${onSelect} />`}
+        </div>
+    `;
+}
+
 // ============== Brief Component ==============
 function BriefView({ country, onBack }) {
     const [brief, setBrief] = useState(null);
@@ -437,6 +721,270 @@ function Onboarding({ onComplete }) {
                 Enable Notifications
             </button>
             <button class="btn secondary" onClick=${saveAndProceed}>Skip for Now</button>
+        </div>
+    `;
+}
+
+// ============== Settings: Event History (Pro) ==============
+function HistoryPanel({ tier }) {
+    const [days, setDays] = useState('90');
+    const [country, setCountry] = useState('');
+    const [result, setResult] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [err, setErr] = useState(null);
+
+    const load = useCallback(async () => {
+        setLoading(true); setErr(null);
+        try {
+            const r = await API.getHistory({
+                days: Number(days),
+                country: country.trim() || undefined,
+                limit: 200,
+            });
+            setResult(r);
+        } catch (e) { setErr(e.message); }
+        setLoading(false);
+    }, [days, country]);
+
+    const sevClass = s => s >= 8 ? 'sev-high' : s >= 5 ? 'sev-med' : 'sev-low';
+
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>📚 Event History</h3>
+                <span class="badge ${tier?.tier || ''}">${tier?.tier || '…'}</span>
+            </div>
+            <p class="panel-sub">Look back through the archive. Free: 1 day · Pro: 90 days · Enterprise: 365 days.</p>
+            <div class="form-row">
+                <select value=${days} onChange=${e => setDays(e.target.value)}>
+                    <option value="1">Last 24 hours</option>
+                    <option value="7">Last 7 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="365">Last 365 days</option>
+                </select>
+                <input placeholder="Country (optional)" value=${country}
+                    onInput=${e => setCountry(e.target.value)} />
+                <button class="btn-sm" onClick=${load} disabled=${loading}>
+                    ${loading ? 'Loading…' : 'Load'}
+                </button>
+            </div>
+            ${err && htmlx`<p class="msg err">${err}</p>`}
+            ${result && htmlx`
+                <div class="history-meta">
+                    ${result.events.length} events · window ${result.days}d (max ${result.max_days}d on ${result.tier})
+                    ${result.truncated ? htmlx`<span class="warn"> — upgrade for a longer window</span>` : ''}
+                </div>
+                <div class="history-list">
+                    ${result.events.length === 0
+                        ? htmlx`<p class="muted">No events in this window.</p>`
+                        : result.events.slice(0, 120).map(ev => htmlx`
+                            <div class="history-item" key=${ev.id}>
+                                <span class="sev ${sevClass(ev.severity)}">${ev.severity}</span>
+                                <div>
+                                    <div class="history-headline">${ev.headline}</div>
+                                    <div class="history-sub">${ev.country} · ${ev.domain} · ${new Date(ev.timestamp).toLocaleString()}</div>
+                                </div>
+                            </div>
+                        `)}
+                </div>
+            `}
+        </div>
+    `;
+}
+
+// ============== Settings: Slack / Telegram delivery (paid) ==============
+function NotificationsPanel({ isPaid }) {
+    const [status, setStatus] = useState(null);
+    const [slack, setSlack] = useState('');
+    const [tgToken, setTgToken] = useState('');
+    const [tgChat, setTgChat] = useState('');
+    const [msg, setMsg] = useState(null);
+    const [saving, setSaving] = useState(false);
+
+    const refresh = useCallback(() => {
+        API.getNotifications().then(setStatus).catch(() => {});
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const save = useCallback(async () => {
+        // Only send fields the user filled — absent = unchanged server-side.
+        const payload = {};
+        if (slack.trim()) payload.slack_webhook_url = slack.trim();
+        if (tgToken.trim()) payload.telegram_bot_token = tgToken.trim();
+        if (tgChat.trim()) payload.telegram_chat_id = tgChat.trim();
+        if (Object.keys(payload).length === 0) {
+            setMsg({ ok: false, text: 'Enter at least one value to save.' });
+            return;
+        }
+        setSaving(true); setMsg(null);
+        try {
+            const r = await API.setNotifications(payload);
+            setStatus(r);
+            setMsg({ ok: true, text: 'Channels saved. Matching alerts will be delivered.' });
+            setSlack(''); setTgToken(''); setTgChat('');
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+        setSaving(false);
+    }, [slack, tgToken, tgChat]);
+
+    const clearChannel = useCallback(async (kind) => {
+        const payload = kind === 'slack'
+            ? { slack_webhook_url: '' }
+            : { telegram_bot_token: '', telegram_chat_id: '' };
+        setMsg(null);
+        try {
+            const r = await API.setNotifications(payload);
+            setStatus(r);
+            setMsg({ ok: true, text: 'Channel cleared.' });
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+    }, []);
+
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>🔔 Alert Delivery</h3>
+                ${status && htmlx`<span class="badge ${status.delivery_enabled ? 'enterprise' : ''}">
+                    ${status.delivery_enabled ? 'active' : 'paid only'}</span>`}
+            </div>
+            <p class="panel-sub">Push alerts that match your subscriptions to Slack and Telegram.</p>
+            ${status && htmlx`
+                <div class="status-row">
+                    <span class="chip ${status.slack_configured ? 'on' : ''}">
+                        ${status.slack_configured ? '✓' : '○'} Slack
+                        ${status.slack_configured ? htmlx`<button class="btn-sm ghost" style="padding:0.1rem 0.4rem;margin-left:0.3rem;" onClick=${() => clearChannel('slack')}>clear</button>` : ''}
+                    </span>
+                    <span class="chip ${status.telegram_configured ? 'on' : ''}">
+                        ${status.telegram_configured ? '✓' : '○'} Telegram
+                        ${status.telegram_chat_id ? htmlx`<span class="muted">(chat ${status.telegram_chat_id})</span>` : ''}
+                        ${status.telegram_configured ? htmlx`<button class="btn-sm ghost" style="padding:0.1rem 0.4rem;margin-left:0.3rem;" onClick=${() => clearChannel('telegram')}>clear</button>` : ''}
+                    </span>
+                </div>
+            `}
+            ${!isPaid ? htmlx`
+                <p class="muted">Slack & Telegram delivery is a <span class="warn">Pro</span> feature. Upgrade to enable push alerts.</p>
+            ` : htmlx`
+                <div class="field">
+                    <label>Slack incoming webhook URL</label>
+                    <input placeholder="https://hooks.slack.com/services/…" value=${slack}
+                        onInput=${e => setSlack(e.target.value)} />
+                </div>
+                <div class="field">
+                    <label>Telegram bot token</label>
+                    <input placeholder="123456:ABC-DEF…" value=${tgToken}
+                        onInput=${e => setTgToken(e.target.value)} />
+                </div>
+                <div class="field">
+                    <label>Telegram chat id</label>
+                    <input placeholder="987654321" value=${tgChat}
+                        onInput=${e => setTgChat(e.target.value)} />
+                </div>
+                <button class="btn-sm" onClick=${save} disabled=${saving}>
+                    ${saving ? 'Saving…' : 'Save channels'}
+                </button>
+                <p class="muted" style="margin-top:0.5rem;">Existing secrets are never shown. Leave a field blank to keep it unchanged.</p>
+            `}
+            ${msg && htmlx`<p class="msg ${msg.ok ? 'ok' : 'err'}">${msg.text}</p>`}
+        </div>
+    `;
+}
+
+// ============== Settings: API keys (Enterprise) ==============
+function ApiKeysPanel() {
+    const [keys, setKeys] = useState([]);
+    const [name, setName] = useState('');
+    const [created, setCreated] = useState(null);
+    const [err, setErr] = useState(null);
+    const [busy, setBusy] = useState(false);
+
+    const refresh = useCallback(() => {
+        API.listKeys().then(setKeys).catch(() => {});
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const create = useCallback(async () => {
+        setBusy(true); setErr(null);
+        try {
+            const r = await API.createKey(name.trim() || undefined);
+            setCreated(r);
+            setName('');
+            refresh();
+        } catch (e) { setErr(e.message); }
+        setBusy(false);
+    }, [name, refresh]);
+
+    const revoke = useCallback(async (id) => {
+        setErr(null);
+        try { await API.revokeKey(id); refresh(); }
+        catch (e) { setErr(e.message); }
+    }, [refresh]);
+
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>🔑 API Keys</h3>
+                <span class="badge enterprise">enterprise</span>
+            </div>
+            <p class="panel-sub">Programmatic access. Send a key as <code>Authorization: Bearer wm_…</code> or <code>X-API-Key</code>.</p>
+            ${created && htmlx`
+                <div class="key-reveal">
+                    <strong>Copy your new key now — it won't be shown again.</strong>
+                    <code>${created.key}</code>
+                    <button class="btn-sm ghost" onClick=${() => setCreated(null)}>Done</button>
+                </div>
+            `}
+            <div class="form-row">
+                <input placeholder="Key name (e.g. ci-pipeline)" value=${name}
+                    onInput=${e => setName(e.target.value)} />
+                <button class="btn-sm" onClick=${create} disabled=${busy}>
+                    ${busy ? 'Creating…' : 'Create key'}
+                </button>
+            </div>
+            ${err && htmlx`<p class="msg err">${err}</p>`}
+            ${keys.length === 0
+                ? htmlx`<p class="muted">No keys yet.</p>`
+                : keys.map(k => htmlx`
+                    <div class="key-row" key=${k.id}>
+                        <div>
+                            <span class="key-mono ${k.revoked ? 'key-revoked' : ''}">${k.prefix}…</span>
+                            <div class="key-meta">
+                                ${k.name || 'unnamed'} · created ${k.created_at ? new Date(k.created_at).toLocaleDateString() : '—'}
+                                ${k.last_used_at ? ` · last used ${new Date(k.last_used_at).toLocaleDateString()}` : ' · never used'}
+                                ${k.revoked ? ' · revoked' : ''}
+                            </div>
+                        </div>
+                        ${!k.revoked && htmlx`<button class="btn-sm danger" onClick=${() => revoke(k.id)}>Revoke</button>`}
+                    </div>
+                `)}
+        </div>
+    `;
+}
+
+// ============== Settings: locked upsell for lower tiers ==============
+function LockedPanel({ icon, title, need, desc }) {
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head"><h3>${title}</h3><span class="badge">${need}</span></div>
+            <div class="locked">
+                <div class="lock-icon">${icon}</div>
+                <p class="muted">${desc}</p>
+                <p class="muted">Available on the <span class="warn">${need}</span> plan.</p>
+            </div>
+        </div>
+    `;
+}
+
+// ============== Settings view ==============
+function Settings({ tier }) {
+    const isPaid = !!tier && tier.tier !== 'free';
+    const isEnterprise = !!tier && tier.tier === 'enterprise';
+    return htmlx`
+        <div class="settings fade-in">
+            <${HistoryPanel} tier=${tier} />
+            <${NotificationsPanel} isPaid=${isPaid} />
+            ${isEnterprise
+                ? htmlx`<${ApiKeysPanel} />`
+                : htmlx`<${LockedPanel} icon="🔑" title="API Keys" need="Enterprise"
+                    desc="Issue wm_ API keys for programmatic access to the intelligence feed and history." />`}
         </div>
     `;
 }
@@ -624,18 +1172,23 @@ function App() {
                     onClick=${handleBack}>
                     🌍 Global Map
                 </button>
-                <button 
+                <button
                     class=${view === 'brief' ? 'active' : ''}
                     onClick=${() => setView('brief')}>
                     📋 Daily Brief
+                </button>
+                <button
+                    class=${view === 'settings' ? 'active' : ''}
+                    onClick=${() => setView('settings')}>
+                    ⚙️ Settings
                 </button>
             </div>
             
             <div class="content">
                 ${view === 'map' && htmlx`
-                    <${MapView} 
-                        data=${data} 
-                        onSelect=${handleCountrySelect} 
+                    <${WorldMap}
+                        data=${data}
+                        onSelect=${handleCountrySelect}
                     />
                     <div class="stats-bar">
                         <span>📊 ${data.length} events tracked</span>
@@ -644,10 +1197,13 @@ function App() {
                     </div>
                 `}
                 ${view === 'brief' && htmlx`
-                    <${BriefView} 
-                        country=${selectedCountry || 'Global'} 
+                    <${BriefView}
+                        country=${selectedCountry || 'Global'}
                         onBack=${handleBack}
                     />
+                `}
+                ${view === 'settings' && htmlx`
+                    <${Settings} tier=${tier} />
                 `}
             </div>
         </div>

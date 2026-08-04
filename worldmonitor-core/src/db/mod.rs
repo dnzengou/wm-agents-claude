@@ -5,7 +5,7 @@ use sqlx::{
 use std::str::FromStr;
 use tracing::info;
 
-use crate::models::{Alert, IntelEvent, User};
+use crate::models::{Alert, ApiKey, IntelEvent, NotificationChannels, User};
 
 /// Database wrapper for SQLite/D1 operations
 #[derive(Clone)]
@@ -152,6 +152,63 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // API keys — programmatic Enterprise access. Only the SHA-256 hash of
+        // each token is stored; the raw key is shown once at creation.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                key_hash TEXT NOT NULL UNIQUE,
+                prefix TEXT NOT NULL,
+                name TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_used_at DATETIME,
+                revoked INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id)")
+            .execute(&self.pool)
+            .await?;
+
+        // Per-user Slack / Telegram delivery channels.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS notification_channels (
+                user_id TEXT PRIMARY KEY,
+                slack_webhook_url TEXT,
+                telegram_bot_token TEXT,
+                telegram_chat_id TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Idempotency guard: at most one push per (user, event). The dispatcher
+        // inserts here before sending, so a re-fused event never double-notifies.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS alert_notifications (
+                user_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, event_id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         info!("Database migrations completed successfully");
         Ok(())
     }
@@ -271,16 +328,76 @@ impl Database {
         Ok(events)
     }
 
-    /// Clean up old events (keep 30 days)
-    pub async fn cleanup_old_events(&self) -> anyhow::Result<u64> {
+    /// Historical events for the paid-tier archive query.
+    ///
+    /// Returns events with `timestamp >= since_ms`, newest first, optionally
+    /// filtered by country. The lookback window is enforced by the caller
+    /// against the user's tier; this method just runs the bounded query.
+    pub async fn get_events_history(
+        &self,
+        since_ms: i64,
+        country: Option<&str>,
+        limit: i64,
+    ) -> anyhow::Result<Vec<IntelEvent>> {
+        let events = match country {
+            Some(c) => {
+                sqlx::query_as::<_, IntelEvent>(
+                    r#"
+                    SELECT id, country, lat, lon, severity, headline, source, timestamp, created_at, domain, link
+                    FROM events
+                    WHERE timestamp >= ? AND country = ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                    "#,
+                )
+                .bind(since_ms)
+                .bind(c)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query_as::<_, IntelEvent>(
+                    r#"
+                    SELECT id, country, lat, lon, severity, headline, source, timestamp, created_at, domain, link
+                    FROM events
+                    WHERE timestamp >= ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                    "#,
+                )
+                .bind(since_ms)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+            }
+        };
+
+        Ok(events)
+    }
+
+    /// Clean up events older than the configured retention window. Defaults to
+    /// 90 days so the Pro history query always has data to read. The modifier is
+    /// bound as a parameter (not string-interpolated) to keep the query safe.
+    pub async fn cleanup_old_events(&self, retention_days: i64) -> anyhow::Result<u64> {
+        let modifier = format!("-{} days", retention_days.max(1));
         let result = sqlx::query(
             r#"
-            DELETE FROM events 
-            WHERE timestamp < strftime('%s', 'now', '-30 days') * 1000
+            DELETE FROM events
+            WHERE timestamp < strftime('%s', 'now', ?) * 1000
             "#,
         )
+        .bind(&modifier)
         .execute(&self.pool)
         .await?;
+
+        // Bound the idempotency guard too — keep 7 days beyond the newest
+        // possible re-fuse window; older rows can never match a live event.
+        let _ = sqlx::query(
+            "DELETE FROM alert_notifications WHERE sent_at < datetime('now', '-30 days')",
+        )
+        .execute(&self.pool)
+        .await;
 
         Ok(result.rows_affected())
     }
@@ -471,6 +588,172 @@ impl Database {
         Ok(alerts)
     }
 
+    /// Every alert across all users — the dispatcher's fan-out source.
+    pub async fn get_all_alerts(&self) -> anyhow::Result<Vec<Alert>> {
+        let alerts = sqlx::query_as::<_, Alert>(
+            r#"
+            SELECT id, user_id, country, threshold, created_at
+            FROM alerts
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(alerts)
+    }
+
+    /// Idempotency guard for delivery: record that `event_id` has been pushed to
+    /// `user_id`. Returns `true` only the first time (insert landed), so callers
+    /// send exactly once even when the same event is re-fused across cycles.
+    pub async fn mark_event_notified(&self, user_id: &str, event_id: &str) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO alert_notifications (user_id, event_id) VALUES (?, ?)",
+        )
+        .bind(user_id)
+        .bind(event_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() == 1)
+    }
+
+    // ==================== API Key Operations ====================
+
+    /// Persist a freshly minted API key. Only the hash is stored.
+    pub async fn create_api_key(
+        &self,
+        id: &str,
+        user_id: &str,
+        key_hash: &str,
+        prefix: &str,
+        name: Option<&str>,
+    ) -> anyhow::Result<()> {
+        // Ensure the owning user row exists (FK + tier lookups rely on it).
+        self.get_or_create_user(user_id).await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO api_keys (id, user_id, key_hash, prefix, name)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(id)
+        .bind(user_id)
+        .bind(key_hash)
+        .bind(prefix)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// List a user's keys (including revoked), newest first. Secrets are never
+    /// stored in plaintext, so this is safe to surface directly.
+    pub async fn list_api_keys(&self, user_id: &str) -> anyhow::Result<Vec<ApiKey>> {
+        let keys = sqlx::query_as::<_, ApiKey>(
+            r#"
+            SELECT id, user_id, key_hash, prefix, name, created_at, last_used_at, revoked
+            FROM api_keys WHERE user_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(keys)
+    }
+
+    /// Look up an active (non-revoked) key by its hash. `None` = no such live key.
+    pub async fn find_active_api_key(&self, key_hash: &str) -> anyhow::Result<Option<ApiKey>> {
+        let key = sqlx::query_as::<_, ApiKey>(
+            r#"
+            SELECT id, user_id, key_hash, prefix, name, created_at, last_used_at, revoked
+            FROM api_keys WHERE key_hash = ? AND revoked = 0
+            "#,
+        )
+        .bind(key_hash)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(key)
+    }
+
+    /// Stamp `last_used_at` on a key. Best-effort; failures are non-fatal.
+    pub async fn touch_api_key(&self, id: &str) -> anyhow::Result<()> {
+        sqlx::query("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Revoke a key the caller owns. Returns `true` if a row was affected —
+    /// scoping by `user_id` stops one user revoking another's key.
+    pub async fn revoke_api_key(&self, user_id: &str, id: &str) -> anyhow::Result<bool> {
+        let result = sqlx::query("UPDATE api_keys SET revoked = 1 WHERE id = ? AND user_id = ?")
+            .bind(id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    // ==================== Notification Channel Operations ====================
+
+    /// Fetch a user's configured Slack / Telegram channels, if any.
+    pub async fn get_notification_channels(
+        &self,
+        user_id: &str,
+    ) -> anyhow::Result<Option<NotificationChannels>> {
+        let channels = sqlx::query_as::<_, NotificationChannels>(
+            r#"
+            SELECT user_id, slack_webhook_url, telegram_bot_token, telegram_chat_id
+            FROM notification_channels WHERE user_id = ?
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(channels)
+    }
+
+    /// Upsert a user's notification channels. Callers pass the fully merged set
+    /// (absent-means-unchanged is resolved in the handler before this call).
+    pub async fn set_notification_channels(
+        &self,
+        user_id: &str,
+        slack_webhook_url: Option<&str>,
+        telegram_bot_token: Option<&str>,
+        telegram_chat_id: Option<&str>,
+    ) -> anyhow::Result<()> {
+        self.get_or_create_user(user_id).await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO notification_channels
+                (user_id, slack_webhook_url, telegram_bot_token, telegram_chat_id, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                slack_webhook_url = excluded.slack_webhook_url,
+                telegram_bot_token = excluded.telegram_bot_token,
+                telegram_chat_id = excluded.telegram_chat_id,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(user_id)
+        .bind(slack_webhook_url)
+        .bind(telegram_bot_token)
+        .bind(telegram_chat_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     // ==================== Brief Cache Operations ====================
 
     /// Get cached brief
@@ -579,5 +862,80 @@ mod tests {
             .await
             .unwrap();
         assert!(none.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_api_key_lifecycle() {
+        let db = Database::new("sqlite::memory:").await.unwrap();
+        db.run_migrations().await.unwrap();
+
+        db.create_api_key("k1", "u1", "hash_abc", "wm_1a2b3c4d", Some("ci"))
+            .await
+            .unwrap();
+
+        // Active lookup by hash resolves to the owner.
+        let found = db.find_active_api_key("hash_abc").await.unwrap().unwrap();
+        assert_eq!(found.user_id, "u1");
+        assert_eq!(found.revoked, 0);
+
+        // Revoking someone else's key is a no-op; the owner's succeeds.
+        assert!(!db.revoke_api_key("intruder", "k1").await.unwrap());
+        assert!(db.revoke_api_key("u1", "k1").await.unwrap());
+
+        // Revoked keys no longer authenticate.
+        assert!(db.find_active_api_key("hash_abc").await.unwrap().is_none());
+
+        // Still visible in the owner's listing (as revoked).
+        let list = db.list_api_keys("u1").await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].revoked, 1);
+    }
+
+    #[tokio::test]
+    async fn test_notification_channels_upsert() {
+        let db = Database::new("sqlite::memory:").await.unwrap();
+        db.run_migrations().await.unwrap();
+
+        assert!(db.get_notification_channels("u1").await.unwrap().is_none());
+
+        db.set_notification_channels("u1", Some("https://hooks.slack/x"), None, None)
+            .await
+            .unwrap();
+        let c = db.get_notification_channels("u1").await.unwrap().unwrap();
+        assert_eq!(
+            c.slack_webhook_url.as_deref(),
+            Some("https://hooks.slack/x")
+        );
+        assert!(c.telegram_bot_token.is_none());
+
+        // Upsert overwrites with the merged set.
+        db.set_notification_channels("u1", Some("https://hooks.slack/x"), Some("tok"), Some("42"))
+            .await
+            .unwrap();
+        let c = db.get_notification_channels("u1").await.unwrap().unwrap();
+        assert!(c.telegram_configured());
+    }
+
+    #[tokio::test]
+    async fn test_notification_idempotency_and_history() {
+        let db = Database::new("sqlite::memory:").await.unwrap();
+        db.run_migrations().await.unwrap();
+
+        // First mark wins; the repeat is suppressed.
+        assert!(db.mark_event_notified("u1", "e1").await.unwrap());
+        assert!(!db.mark_event_notified("u1", "e1").await.unwrap());
+        // Different user is independent.
+        assert!(db.mark_event_notified("u2", "e1").await.unwrap());
+
+        // History query honours the since bound.
+        let event = IntelEvent::new("Ukraine", 48.0, 31.0, 9, "Historic", "gdelt");
+        db.upsert_event(&event).await.unwrap();
+        let all = db.get_events_history(0, None, 100).await.unwrap();
+        assert_eq!(all.len(), 1);
+        let future = db
+            .get_events_history(chrono::Utc::now().timestamp_millis() + 1000, None, 100)
+            .await
+            .unwrap();
+        assert!(future.is_empty());
     }
 }

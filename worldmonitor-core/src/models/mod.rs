@@ -116,6 +116,22 @@ impl Tier {
             Tier::Pro | Tier::Enterprise => None,
         }
     }
+
+    /// Historical lookback window in days unlocked by this tier.
+    /// Free is limited to `free_days` (typically 1); Pro unlocks the headline
+    /// 90-day window; Enterprise gets a full year.
+    pub fn max_history_days(&self, free_days: i64) -> i64 {
+        match self {
+            Tier::Free => free_days,
+            Tier::Pro => 90,
+            Tier::Enterprise => 365,
+        }
+    }
+
+    /// Whether this tier can issue programmatic API keys (Enterprise only).
+    pub fn can_issue_api_keys(&self) -> bool {
+        matches!(self, Tier::Enterprise)
+    }
 }
 
 /// User preferences and state
@@ -185,6 +201,59 @@ pub struct Alert {
     pub country: String,
     pub threshold: i32,
     pub created_at: Option<DateTime<Utc>>,
+}
+
+/// Programmatic API key for Enterprise access.
+///
+/// The raw token (`wm_…`) is shown to the user exactly once at creation; only
+/// its SHA-256 hash is persisted, so a database leak never exposes live keys.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ApiKey {
+    pub id: String,
+    pub user_id: String,
+    /// SHA-256 hex of the raw token. Unique; this is what we look up on auth.
+    pub key_hash: String,
+    /// Non-secret display prefix (e.g. `wm_1a2b3c4d`) so users can tell keys apart.
+    pub prefix: String,
+    pub name: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    /// 0 = active, 1 = revoked. SQLite has no bool; stored as INTEGER.
+    pub revoked: i64,
+}
+
+/// Per-user outbound notification channels (Slack incoming-webhook + Telegram
+/// bot). Any field may be unset; delivery only fires for configured channels.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct NotificationChannels {
+    pub user_id: String,
+    pub slack_webhook_url: Option<String>,
+    pub telegram_bot_token: Option<String>,
+    pub telegram_chat_id: Option<String>,
+}
+
+impl NotificationChannels {
+    /// Whether at least one channel is fully configured and can receive a push.
+    pub fn any_configured(&self) -> bool {
+        self.slack_configured() || self.telegram_configured()
+    }
+
+    pub fn slack_configured(&self) -> bool {
+        self.slack_webhook_url
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
+    }
+
+    /// Telegram needs both a bot token and a chat id to deliver.
+    pub fn telegram_configured(&self) -> bool {
+        self.telegram_bot_token
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
+            && self
+                .telegram_chat_id
+                .as_deref()
+                .is_some_and(|s| !s.is_empty())
+    }
 }
 
 /// AI-generated intelligence brief
@@ -683,9 +752,38 @@ pub mod requests {
         /// "pro" | "enterprise"
         pub tier: String,
     }
+
+    /// GET /api/history — tier-scoped historical event query.
+    #[derive(Debug, Deserialize)]
+    pub struct HistoryQuery {
+        /// Requested lookback in days; clamped to the caller's tier ceiling.
+        pub days: Option<i64>,
+        /// Optional country filter.
+        pub country: Option<String>,
+        /// Max rows to return (clamped server-side).
+        pub limit: Option<i64>,
+    }
+
+    /// POST /api/keys — mint a new API key (Enterprise only).
+    #[derive(Debug, Deserialize)]
+    pub struct CreateApiKeyRequest {
+        /// Human-friendly label, e.g. "ci-pipeline".
+        pub name: Option<String>,
+    }
+
+    /// POST /api/notifications — set Slack / Telegram delivery channels.
+    ///
+    /// A field left absent is unchanged; an explicit empty string clears it.
+    #[derive(Debug, Deserialize)]
+    pub struct NotificationChannelsRequest {
+        pub slack_webhook_url: Option<String>,
+        pub telegram_bot_token: Option<String>,
+        pub telegram_chat_id: Option<String>,
+    }
 }
 
 pub mod responses {
+    use chrono::{DateTime, Utc};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize)]
@@ -737,5 +835,57 @@ pub mod responses {
         /// Whether Stripe billing is wired up on this deployment. The frontend
         /// hides the upgrade CTA when this is false.
         pub billing_enabled: bool,
+    }
+
+    /// GET /api/history — a tier-scoped slice of the event archive.
+    #[derive(Debug, Serialize)]
+    pub struct HistoryResponse {
+        pub events: Vec<crate::models::IntelEvent>,
+        /// Lookback window actually applied (days).
+        pub days: i64,
+        /// The caller's tier ceiling, so the UI can prompt an upgrade.
+        pub max_days: i64,
+        pub tier: String,
+        /// True when the request asked for more history than the tier allows.
+        pub truncated: bool,
+    }
+
+    /// POST /api/keys — the one and only time the raw key is returned.
+    #[derive(Debug, Serialize)]
+    pub struct ApiKeyCreatedResponse {
+        pub id: String,
+        /// Full secret token — store it now, it is never shown again.
+        pub key: String,
+        pub prefix: String,
+        pub name: Option<String>,
+    }
+
+    /// A single key in a listing — never includes the secret.
+    #[derive(Debug, Serialize)]
+    pub struct ApiKeyInfo {
+        pub id: String,
+        pub prefix: String,
+        pub name: Option<String>,
+        pub created_at: Option<DateTime<Utc>>,
+        pub last_used_at: Option<DateTime<Utc>>,
+        pub revoked: bool,
+    }
+
+    /// GET /api/keys — all of the caller's keys (secrets redacted).
+    #[derive(Debug, Serialize)]
+    pub struct ApiKeysResponse {
+        pub keys: Vec<ApiKeyInfo>,
+    }
+
+    /// GET/POST /api/notifications — channel status (secrets never echoed).
+    #[derive(Debug, Serialize)]
+    pub struct NotificationChannelsResponse {
+        pub slack_configured: bool,
+        pub telegram_configured: bool,
+        /// Chat id is not a secret; echoed to confirm the saved target.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub telegram_chat_id: Option<String>,
+        /// Whether the caller's tier actually delivers pushes (paid only).
+        pub delivery_enabled: bool,
     }
 }
