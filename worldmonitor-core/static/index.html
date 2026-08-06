@@ -7,12 +7,15 @@
     <meta name="theme-color" content="#0a0a0f">
     <title>WorldMonitor Core - Real-Time Intelligence</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+    <!-- Vendored locally (see static/vendor/) so the app has no CDN/network
+         dependency and works offline and under a strict CSP. -->
     <script type="importmap">
     {
         "imports": {
-            "preact": "https://esm.sh/preact@10.19.3",
-            "preact/hooks": "https://esm.sh/preact@10.19.3/hooks",
-            "htm/preact": "https://esm.sh/htm@3.1.1/preact?external=preact"
+            "preact": "/vendor/preact.mjs",
+            "preact/hooks": "/vendor/hooks.mjs",
+            "htm": "/vendor/htm.mjs",
+            "htm/preact": "/vendor/htm-preact.mjs"
         }
     }
     </script>
