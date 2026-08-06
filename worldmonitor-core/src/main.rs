@@ -4,6 +4,7 @@
 #![allow(dead_code, clippy::unnecessary_sort_by)]
 
 use axum::{
+    response::IntoResponse,
     routing::{delete, get, post},
     Router,
 };
@@ -177,12 +178,30 @@ async fn serve_frontend() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../static/index.html"))
 }
 
+/// Serve a JS module with the correct MIME type. ES modules are rejected by
+/// browsers unless served as `text/javascript`, so we can't reuse the HTML
+/// responder here.
+fn js(body: &'static str) -> axum::response::Response {
+    use axum::http::header;
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        body,
+    )
+        .into_response()
+}
+
 async fn serve_static(
     axum::extract::Path(path): axum::extract::Path<String>,
-) -> impl axum::response::IntoResponse {
+) -> axum::response::Response {
+    use axum::http::StatusCode;
     match path.as_str() {
-        "app.js" => axum::response::Html(include_str!("../static/app.js")),
-        _ => axum::response::Html("Not found"),
+        "app.js" => js(include_str!("../static/app.js")),
+        // Locally-vendored ESM dependencies (no CDN). See static/vendor/.
+        "vendor/preact.mjs" => js(include_str!("../static/vendor/preact.mjs")),
+        "vendor/hooks.mjs" => js(include_str!("../static/vendor/hooks.mjs")),
+        "vendor/htm.mjs" => js(include_str!("../static/vendor/htm.mjs")),
+        "vendor/htm-preact.mjs" => js(include_str!("../static/vendor/htm-preact.mjs")),
+        _ => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
 
