@@ -8,6 +8,8 @@ worldmonitor-core/.env
 worldmonitor-ui-components/.next/
 worldmonitor-ui-components/out/
 worldmonitor-ui-components/node_modules/
+worldmonitor-ui-components/next-env.d.ts
+worldmonitor-ui-components/*.tsbuildinfo
 worldmonitor-ui-components/.env.local
 worldmonitor-ui-components/.env.*.local
 
