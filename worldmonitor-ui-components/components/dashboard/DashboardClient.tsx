@@ -305,7 +305,7 @@ export function DashboardClient({ initialEvents }: Props) {
       setTimeout(() => setShareState('idle'), 1600);
     } catch { /* clipboard blocked — silent */ }
   }, []);
-  const [viewMode, setViewMode] = useState<ViewMode>('map');
+
   // ── Collapsible panels — both hidden on mobile, open on desktop ────────────
   const [leftOpen,  setLeftOpen]  = useState(false); // SSR-safe default: closed
   const [rightOpen, setRightOpen] = useState(false);
@@ -317,9 +317,6 @@ export function DashboardClient({ initialEvents }: Props) {
     setLeftOpen(open);
     setRightOpen(open);
   }, []);
-
-  // ── Domain filter ──────────────────────────────────────────────────────────
-  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
 
   // ── NL search ─────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
@@ -378,7 +375,6 @@ export function DashboardClient({ initialEvents }: Props) {
       {/* Status bar */}
       <StatusBar
         version="2.6.6"
-        version="2.7.0"
         isLive={!isLoading}
         isStreaming={streaming}
         region="Global"
@@ -480,11 +476,6 @@ export function DashboardClient({ initialEvents }: Props) {
           </div>
         </div>
 
-        {/* Center — Map */}
-        {/* overflow-visible so Leaflet popups/tooltips can extend beyond bounds */}
-        <div className="flex-1 relative">
-          {/* Layer control + view toggle — sits above map via z-[1001] */}
-          <div className="absolute top-3 left-3 z-[1001] flex items-center gap-2">
         {/* ── Center — Map (always fills remaining space) ──────────────────── */}
         <div className="flex-1 min-h-0 relative">
 
