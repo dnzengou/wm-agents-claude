@@ -7,13 +7,48 @@ const htmlx = html;
 // ============== API Client ==============
 const API = {
     baseUrl: '',
-    
+
+    // Stable per-browser identity. Persisted in localStorage so a visitor's
+    // tier, alerts, history, API keys and delivery channels all belong to
+    // *them* rather than a shared "anonymous" bucket. Sent as the `X-User-Id`
+    // header the backend already keys every account on. Falls back to a
+    // per-session id when storage is unavailable (private mode, blocked
+    // storage) so the app still works, wrapped in try/catch per the storage
+    // contract.
+    _uid: null,
+    _newId() {
+        const rand = (globalThis.crypto && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2) + Date.now().toString(36);
+        return `u_${rand}`;
+    },
+    uid() {
+        if (this._uid) return this._uid;
+        try {
+            let id = localStorage.getItem('wm_uid');
+            if (!id) {
+                id = this._newId();
+                localStorage.setItem('wm_uid', id);
+            }
+            this._uid = id;
+        } catch {
+            // Storage blocked — keep a coherent id for this page load.
+            this._uid = this._newId();
+        }
+        return this._uid;
+    },
+
+    // Identity header (plus any extras, e.g. Content-Type).
+    authHeaders(extra = {}) {
+        return { 'X-User-Id': this.uid(), ...extra };
+    },
+
     async getIntelligence() {
         const res = await fetch(`${this.baseUrl}/api/intelligence`);
         if (!res.ok) throw new Error('Failed to fetch intelligence');
         return res.json();
     },
-    
+
     async getBrief(country) {
         const res = await fetch(`${this.baseUrl}/api/brief`, {
             method: 'POST',
@@ -23,46 +58,43 @@ const API = {
         if (!res.ok) throw new Error('Failed to generate brief');
         return res.json();
     },
-    
+
     async getUser() {
         const res = await fetch(`${this.baseUrl}/api/user`, {
-            headers: { 'Authorization': 'Bearer anonymous' }
+            headers: this.authHeaders()
         });
         if (!res.ok) throw new Error('Failed to get user');
         return res.json();
     },
-    
+
     async updateUser(data) {
         const res = await fetch(`${this.baseUrl}/api/user`, {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer anonymous'
-            },
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(data)
         });
         if (!res.ok) throw new Error('Failed to update user');
         return res.json();
     },
-    
+
     async sync(since) {
         const res = await fetch(`${this.baseUrl}/api/sync?since=${since}`);
         if (!res.ok) throw new Error('Failed to sync');
         return res.json();
     },
-    
+
     async createAlert(country, threshold = 5) {
         const res = await fetch(`${this.baseUrl}/api/alerts`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
-            body: JSON.stringify({ user_id: 'anonymous', country, threshold })
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ country, threshold })
         });
         return res.json();
     },
 
     async getTier() {
         const res = await fetch(`${this.baseUrl}/api/billing/tier`, {
-            headers: { 'X-User-Id': 'anonymous' }
+            headers: this.authHeaders()
         });
         if (!res.ok) throw new Error('Failed to get tier');
         return res.json();
@@ -72,7 +104,7 @@ const API = {
     async checkout(tier) {
         const res = await fetch(`${this.baseUrl}/api/billing/checkout`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ tier })
         });
         const data = await res.json().catch(() => ({}));
@@ -87,7 +119,7 @@ const API = {
         const q = new URLSearchParams({ days: String(days), limit: String(limit) });
         if (country) q.set('country', country);
         const res = await fetch(`${this.baseUrl}/api/history?${q}`, {
-            headers: { 'X-User-Id': 'anonymous' }
+            headers: this.authHeaders()
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Failed to load history');
@@ -97,7 +129,7 @@ const API = {
     // Current Slack/Telegram delivery status (secrets never returned).
     async getNotifications() {
         const res = await fetch(`${this.baseUrl}/api/notifications`, {
-            headers: { 'X-User-Id': 'anonymous' }
+            headers: this.authHeaders()
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Failed to load channels');
@@ -108,7 +140,7 @@ const API = {
     async setNotifications(channels) {
         const res = await fetch(`${this.baseUrl}/api/notifications`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(channels)
         });
         const data = await res.json().catch(() => ({}));
@@ -119,7 +151,7 @@ const API = {
     // Enterprise API keys.
     async listKeys() {
         const res = await fetch(`${this.baseUrl}/api/keys`, {
-            headers: { 'X-User-Id': 'anonymous' }
+            headers: this.authHeaders()
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'Failed to list keys');
@@ -130,7 +162,7 @@ const API = {
     async createKey(name) {
         const res = await fetch(`${this.baseUrl}/api/keys`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-User-Id': 'anonymous' },
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ name })
         });
         const data = await res.json().catch(() => ({}));
@@ -141,7 +173,7 @@ const API = {
     async revokeKey(id) {
         const res = await fetch(`${this.baseUrl}/api/keys/${encodeURIComponent(id)}`, {
             method: 'DELETE',
-            headers: { 'X-User-Id': 'anonymous' }
+            headers: this.authHeaders()
         });
         if (!res.ok && res.status !== 204) {
             const data = await res.json().catch(() => ({}));
@@ -979,6 +1011,9 @@ function Settings({ tier }) {
     const isEnterprise = !!tier && tier.tier === 'enterprise';
     return htmlx`
         <div class="settings fade-in">
+            <div class="account-note">
+                Account <code>${API.uid()}</code> · saved to this browser
+            </div>
             <${HistoryPanel} tier=${tier} />
             <${NotificationsPanel} isPaid=${isPaid} />
             ${isEnterprise
