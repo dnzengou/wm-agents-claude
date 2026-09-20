@@ -89,7 +89,31 @@ const API = {
             headers: this.authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ country, threshold })
         });
-        return res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to create alert');
+        return data;
+    },
+
+    // List the caller's alert subscriptions + their tier cap ({ alerts, max_alerts }).
+    async getAlerts() {
+        const res = await fetch(`${this.baseUrl}/api/alerts`, {
+            headers: this.authHeaders()
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to load alerts');
+        return data;
+    },
+
+    async deleteAlert(id) {
+        const res = await fetch(`${this.baseUrl}/api/alerts/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: this.authHeaders()
+        });
+        if (!res.ok && res.status !== 204) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed to delete alert');
+        }
+        return true;
     },
 
     async getTier() {
@@ -1005,6 +1029,83 @@ function LockedPanel({ icon, title, need, desc }) {
     `;
 }
 
+// ============== Settings: Alert subscriptions ==============
+function AlertsPanel() {
+    const [alerts, setAlerts] = useState([]);
+    const [maxAlerts, setMaxAlerts] = useState(null);
+    const [country, setCountry] = useState('');
+    const [threshold, setThreshold] = useState('5');
+    const [msg, setMsg] = useState(null);
+    const [busy, setBusy] = useState(false);
+
+    const refresh = useCallback(async () => {
+        try {
+            const r = await API.getAlerts();
+            setAlerts(r.alerts || []);
+            setMaxAlerts(r.max_alerts ?? null);
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const add = useCallback(async () => {
+        const c = country.trim();
+        if (!c) { setMsg({ ok: false, text: 'Enter a country.' }); return; }
+        setBusy(true); setMsg(null);
+        try {
+            await API.createAlert(c, Number(threshold));
+            setCountry('');
+            setMsg({ ok: true, text: `Alert added for ${c}.` });
+            refresh();
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+        setBusy(false);
+    }, [country, threshold, refresh]);
+
+    const remove = useCallback(async (id) => {
+        setMsg(null);
+        try { await API.deleteAlert(id); refresh(); }
+        catch (e) { setMsg({ ok: false, text: e.message }); }
+    }, [refresh]);
+
+    const atCap = maxAlerts != null && alerts.length >= maxAlerts;
+    const sevClass = s => s >= 8 ? 'sev-high' : s >= 5 ? 'sev-med' : 'sev-low';
+
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>🔔 Alert Subscriptions</h3>
+                <span class="badge">${maxAlerts == null ? `${alerts.length}` : `${alerts.length} / ${maxAlerts}`}</span>
+            </div>
+            <p class="panel-sub">Get notified when a country's events meet a severity threshold. These drive your Slack & Telegram delivery.</p>
+            <div class="form-row">
+                <input placeholder="Country (e.g. Ukraine)" value=${country}
+                    onInput=${e => setCountry(e.target.value)} />
+                <select value=${threshold} onChange=${e => setThreshold(e.target.value)} title="Minimum severity">
+                    ${[3, 5, 7, 8].map(v => htmlx`<option value=${String(v)}>sev ≥ ${v}</option>`)}
+                </select>
+                <button class="btn-sm" onClick=${add} disabled=${busy || atCap}>
+                    ${busy ? 'Adding…' : 'Add'}
+                </button>
+            </div>
+            ${atCap && htmlx`<p class="muted">Free tier is capped at ${maxAlerts} alerts. <span class="warn">Upgrade to Pro</span> for unlimited.</p>`}
+            ${msg && htmlx`<p class="msg ${msg.ok ? 'ok' : 'err'}">${msg.text}</p>`}
+            ${alerts.length === 0
+                ? htmlx`<p class="muted">No alerts yet.</p>`
+                : alerts.map(a => htmlx`
+                    <div class="key-row" key=${a.id}>
+                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                            <span class="sev ${sevClass(a.threshold)}">${a.threshold}</span>
+                            <div>
+                                <div class="history-headline">${a.country}</div>
+                                <div class="key-meta">severity ≥ ${a.threshold}${a.created_at ? ` · since ${new Date(a.created_at).toLocaleDateString()}` : ''}</div>
+                            </div>
+                        </div>
+                        <button class="btn-sm danger" onClick=${() => remove(a.id)}>Remove</button>
+                    </div>
+                `)}
+        </div>
+    `;
+}
+
 // ============== Settings view ==============
 function Settings({ tier }) {
     const isPaid = !!tier && tier.tier !== 'free';
@@ -1015,6 +1116,7 @@ function Settings({ tier }) {
                 Account <code>${API.uid()}</code> · saved to this browser
             </div>
             <${HistoryPanel} tier=${tier} />
+            <${AlertsPanel} />
             <${NotificationsPanel} isPaid=${isPaid} />
             ${isEnterprise
                 ? htmlx`<${ApiKeysPanel} />`
