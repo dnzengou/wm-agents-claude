@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::Json,
     Json as AxumJson,
@@ -8,9 +8,10 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::{
+    auth::{authenticate, AuthError},
     models::{
         requests::AlertRequest,
-        responses::{ErrorResponse, SuccessResponse},
+        responses::{AlertInfo, AlertsResponse, ErrorResponse, SuccessResponse},
     },
     AppState,
 };
@@ -105,4 +106,73 @@ pub async fn handler(
             ))
         }
     }
+}
+
+/// GET /api/alerts - List the caller's alert subscriptions and their tier cap.
+pub async fn list_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<AlertsResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let authed = authenticate(&state, &headers).await.map_err(auth_err)?;
+
+    let alerts = state.db.get_alerts(&authed.user_id).await.map_err(|e| {
+        tracing::error!("Database error in alerts list: {}", e);
+        err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load alerts")
+    })?;
+
+    let alerts = alerts
+        .into_iter()
+        .map(|a| AlertInfo {
+            id: a.id,
+            country: a.country,
+            threshold: a.threshold,
+            created_at: a.created_at,
+        })
+        .collect();
+
+    Ok(Json(AlertsResponse {
+        alerts,
+        max_alerts: authed.tier.max_alerts(state.config.max_alerts_free),
+    }))
+}
+
+/// DELETE /api/alerts/:id - Remove one of the caller's alert subscriptions.
+pub async fn delete_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let authed = authenticate(&state, &headers).await.map_err(auth_err)?;
+
+    let removed = state
+        .db
+        .delete_alert(&authed.user_id, id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error deleting alert: {}", e);
+            err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete alert")
+        })?;
+
+    if !removed {
+        return Err(err(StatusCode::NOT_FOUND, "No such alert"));
+    }
+
+    info!("Deleted alert {} for user {}", id, authed.user_id);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn auth_err(e: AuthError) -> (StatusCode, Json<ErrorResponse>) {
+    match e {
+        AuthError::InvalidKey => err(StatusCode::UNAUTHORIZED, "Invalid or revoked API key"),
+        AuthError::Internal => err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to authenticate"),
+    }
+}
+
+fn err(status: StatusCode, msg: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        status,
+        Json(ErrorResponse {
+            error: msg.to_string(),
+        }),
+    )
 }

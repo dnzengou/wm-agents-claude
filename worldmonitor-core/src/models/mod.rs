@@ -888,4 +888,22 @@ pub mod responses {
         /// Whether the caller's tier actually delivers pushes (paid only).
         pub delivery_enabled: bool,
     }
+
+    /// A single alert subscription in a listing.
+    #[derive(Debug, Serialize)]
+    pub struct AlertInfo {
+        pub id: i64,
+        pub country: String,
+        pub threshold: i32,
+        pub created_at: Option<DateTime<Utc>>,
+    }
+
+    /// GET /api/alerts — the caller's alert subscriptions plus their tier cap.
+    #[derive(Debug, Serialize)]
+    pub struct AlertsResponse {
+        pub alerts: Vec<AlertInfo>,
+        /// `null` when unlimited (paid tiers); the free-tier cap otherwise.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub max_alerts: Option<i32>,
+    }
 }

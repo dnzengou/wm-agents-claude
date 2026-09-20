@@ -420,9 +420,13 @@ impl Database {
             Some(u) => Ok(u),
             None => {
                 let new_user = User::new(user_id);
+                // INSERT OR IGNORE so two requests racing to create the same
+                // brand-new user (the app fires several concurrent calls on
+                // first load) don't collide on the UNIQUE id — the loser's
+                // insert is a no-op instead of a 1555 error.
                 sqlx::query(
                     r#"
-                    INSERT INTO users (id, interests, countries, alert_threshold, streak, last_visit, created_at, tier, stripe_customer_id)
+                    INSERT OR IGNORE INTO users (id, interests, countries, alert_threshold, streak, last_visit, created_at, tier, stripe_customer_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     "#,
                 )
@@ -437,7 +441,20 @@ impl Database {
                 .bind(&new_user.stripe_customer_id)
                 .execute(&self.pool)
                 .await?;
-                Ok(new_user)
+
+                // Re-fetch so we return whichever row now exists (ours, or the
+                // one a concurrent request inserted first).
+                let created: Option<User> = sqlx::query_as(
+                    r#"
+                    SELECT id, interests, countries, alert_threshold, streak, last_visit, created_at, tier, stripe_customer_id
+                    FROM users WHERE id = ?
+                    "#,
+                )
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await?;
+
+                Ok(created.unwrap_or(new_user))
             }
         }
     }
@@ -543,6 +560,10 @@ impl Database {
         country: &str,
         threshold: i32,
     ) -> anyhow::Result<()> {
+        // Ensure the owning user row exists so the FK holds even when an alert
+        // is created before any profile write (e.g. via an API key).
+        self.get_or_create_user(user_id).await?;
+
         sqlx::query(
             r#"
             INSERT INTO alerts (user_id, country, threshold)
@@ -600,6 +621,18 @@ impl Database {
         .await?;
 
         Ok(alerts)
+    }
+
+    /// Delete an alert the caller owns. Returns `true` if a row was removed —
+    /// scoping by `user_id` stops one user deleting another's subscription.
+    pub async fn delete_alert(&self, user_id: &str, id: i64) -> anyhow::Result<bool> {
+        let result = sqlx::query("DELETE FROM alerts WHERE id = ? AND user_id = ?")
+            .bind(id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
     }
 
     /// Idempotency guard for delivery: record that `event_id` has been pushed to
@@ -914,6 +947,32 @@ mod tests {
             .unwrap();
         let c = db.get_notification_channels("u1").await.unwrap().unwrap();
         assert!(c.telegram_configured());
+    }
+
+    #[tokio::test]
+    async fn test_alerts_crud() {
+        let db = Database::new("sqlite::memory:").await.unwrap();
+        db.run_migrations().await.unwrap();
+
+        db.create_alert("u1", "Ukraine", 7).await.unwrap();
+        db.create_alert("u1", "Taiwan", 5).await.unwrap();
+        db.create_alert("u2", "Iran", 8).await.unwrap();
+
+        // Listing is scoped to the owner.
+        let mine = db.get_alerts("u1").await.unwrap();
+        assert_eq!(mine.len(), 2);
+        assert_eq!(db.count_alerts("u1").await.unwrap(), 2);
+
+        // A user can't delete someone else's alert.
+        let other_id = db.get_alerts("u2").await.unwrap()[0].id;
+        assert!(!db.delete_alert("u1", other_id).await.unwrap());
+
+        // Deleting an owned alert removes exactly it.
+        let one = mine[0].id;
+        assert!(db.delete_alert("u1", one).await.unwrap());
+        assert_eq!(db.get_alerts("u1").await.unwrap().len(), 1);
+        // Deleting again is a no-op.
+        assert!(!db.delete_alert("u1", one).await.unwrap());
     }
 
     #[tokio::test]
