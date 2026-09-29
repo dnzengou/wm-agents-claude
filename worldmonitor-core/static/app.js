@@ -116,6 +116,18 @@ const API = {
         return true;
     },
 
+    // Change an alert's severity threshold in place.
+    async updateAlert(id, threshold) {
+        const res = await fetch(`${this.baseUrl}/api/alerts/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ threshold })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to update alert');
+        return data;
+    },
+
     async getTier() {
         const res = await fetch(`${this.baseUrl}/api/billing/tier`, {
             headers: this.authHeaders()
@@ -606,7 +618,7 @@ function WorldMap({ data, onSelect }) {
 }
 
 // ============== Brief Component ==============
-function BriefView({ country, onBack }) {
+function BriefView({ country, onBack, onSetAlert }) {
     const [brief, setBrief] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -671,11 +683,11 @@ function BriefView({ country, onBack }) {
             `}
 
             <button class="btn" onClick=${onBack}>Back to Global Map</button>
-            <button class="btn secondary" onClick=${() => {
-                API.createAlert(country, 5).then(() => alert(`Alert set for ${country}`));
-            }}>
-                🔔 Set Alert for ${country}
-            </button>
+            ${country !== 'Global' && onSetAlert && htmlx`
+                <button class="btn secondary" onClick=${() => onSetAlert(country)}>
+                    🔔 Set Alert for ${country}
+                </button>
+            `}
         </div>
     `;
 }
@@ -1030,13 +1042,14 @@ function LockedPanel({ icon, title, need, desc }) {
 }
 
 // ============== Settings: Alert subscriptions ==============
-function AlertsPanel() {
+function AlertsPanel({ initialCountry, onConsumed }) {
     const [alerts, setAlerts] = useState([]);
     const [maxAlerts, setMaxAlerts] = useState(null);
-    const [country, setCountry] = useState('');
+    const [country, setCountry] = useState(initialCountry || '');
     const [threshold, setThreshold] = useState('5');
     const [msg, setMsg] = useState(null);
     const [busy, setBusy] = useState(false);
+    const panelRef = useRef(null);
 
     const refresh = useCallback(async () => {
         try {
@@ -1046,6 +1059,15 @@ function AlertsPanel() {
         } catch (e) { setMsg({ ok: false, text: e.message }); }
     }, []);
     useEffect(() => { refresh(); }, [refresh]);
+
+    // When deep-linked from a brief, surface the panel and clear the prefill so
+    // it doesn't stick on later manual visits.
+    useEffect(() => {
+        if (initialCountry) {
+            panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            onConsumed?.();
+        }
+    }, []);
 
     const add = useCallback(async () => {
         const c = country.trim();
@@ -1066,11 +1088,20 @@ function AlertsPanel() {
         catch (e) { setMsg({ ok: false, text: e.message }); }
     }, [refresh]);
 
+    const edit = useCallback(async (id, newThreshold) => {
+        setMsg(null);
+        try {
+            await API.updateAlert(id, Number(newThreshold));
+            setMsg({ ok: true, text: 'Threshold updated.' });
+            refresh();
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+    }, [refresh]);
+
     const atCap = maxAlerts != null && alerts.length >= maxAlerts;
     const sevClass = s => s >= 8 ? 'sev-high' : s >= 5 ? 'sev-med' : 'sev-low';
 
     return htmlx`
-        <div class="panel">
+        <div class="panel" ref=${panelRef}>
             <div class="panel-head">
                 <h3>🔔 Alert Subscriptions</h3>
                 <span class="badge">${maxAlerts == null ? `${alerts.length}` : `${alerts.length} / ${maxAlerts}`}</span>
@@ -1092,14 +1123,21 @@ function AlertsPanel() {
                 ? htmlx`<p class="muted">No alerts yet.</p>`
                 : alerts.map(a => htmlx`
                     <div class="key-row" key=${a.id}>
-                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                        <div style="display:flex; align-items:center; gap:0.6rem; min-width:0;">
                             <span class="sev ${sevClass(a.threshold)}">${a.threshold}</span>
-                            <div>
+                            <div style="min-width:0;">
                                 <div class="history-headline">${a.country}</div>
-                                <div class="key-meta">severity ≥ ${a.threshold}${a.created_at ? ` · since ${new Date(a.created_at).toLocaleDateString()}` : ''}</div>
+                                <div class="key-meta">${a.created_at ? `since ${new Date(a.created_at).toLocaleDateString()}` : 'active'}</div>
                             </div>
                         </div>
-                        <button class="btn-sm danger" onClick=${() => remove(a.id)}>Remove</button>
+                        <div style="display:flex; align-items:center; gap:0.4rem; flex-shrink:0;">
+                            <select class="sev-edit" title="Change severity threshold" value=${String(a.threshold)}
+                                onChange=${e => edit(a.id, e.target.value)}>
+                                ${Array.from(new Set([3, 5, 7, 8, 10, a.threshold])).sort((x, y) => x - y)
+                                    .map(v => htmlx`<option value=${String(v)}>≥ ${v}</option>`)}
+                            </select>
+                            <button class="btn-sm danger" onClick=${() => remove(a.id)}>Remove</button>
+                        </div>
                     </div>
                 `)}
         </div>
@@ -1107,7 +1145,7 @@ function AlertsPanel() {
 }
 
 // ============== Settings view ==============
-function Settings({ tier }) {
+function Settings({ tier, alertPrefill, onPrefillConsumed }) {
     const isPaid = !!tier && tier.tier !== 'free';
     const isEnterprise = !!tier && tier.tier === 'enterprise';
     return htmlx`
@@ -1116,7 +1154,7 @@ function Settings({ tier }) {
                 Account <code>${API.uid()}</code> · saved to this browser
             </div>
             <${HistoryPanel} tier=${tier} />
-            <${AlertsPanel} />
+            <${AlertsPanel} initialCountry=${alertPrefill} onConsumed=${onPrefillConsumed} />
             <${NotificationsPanel} isPaid=${isPaid} />
             ${isEnterprise
                 ? htmlx`<${ApiKeysPanel} />`
@@ -1138,6 +1176,7 @@ function App() {
     const [tier, setTier] = useState(null);
     const [upgrading, setUpgrading] = useState(false);
     const [notice, setNotice] = useState(null);
+    const [alertPrefill, setAlertPrefill] = useState(null);
 
     // Initial load
     useEffect(() => {
@@ -1244,6 +1283,12 @@ function App() {
         setView('map');
     }, []);
 
+    // Deep-link from a brief into the alerts panel with the country prefilled.
+    const handleSetAlert = useCallback((country) => {
+        setAlertPrefill(country);
+        setView('settings');
+    }, []);
+
     // Handle onboarding complete
     const handleOnboardingComplete = useCallback(() => {
         setView('map');
@@ -1337,10 +1382,13 @@ function App() {
                     <${BriefView}
                         country=${selectedCountry || 'Global'}
                         onBack=${handleBack}
+                        onSetAlert=${handleSetAlert}
                     />
                 `}
                 ${view === 'settings' && htmlx`
-                    <${Settings} tier=${tier} />
+                    <${Settings} tier=${tier}
+                        alertPrefill=${alertPrefill}
+                        onPrefillConsumed=${() => setAlertPrefill(null)} />
                 `}
             </div>
         </div>

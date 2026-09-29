@@ -323,7 +323,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/alerts",
             get(alerts::list_handler).post(alerts::handler),
         )
-        .route("/api/alerts/:id", delete(alerts::delete_handler))
+        .route(
+            "/api/alerts/:id",
+            delete(alerts::delete_handler).patch(alerts::update_handler),
+        )
         .route("/api/sync", get(sync::handler))
         .route("/api/user", get(user::get_handler).post(user::post_handler))
         // ── Paid-tier features ───────────────────────────────────────────────

@@ -735,6 +735,12 @@ pub mod requests {
         pub threshold: i32,
     }
 
+    /// PATCH /api/alerts/:id — change an existing alert's severity threshold.
+    #[derive(Debug, Deserialize)]
+    pub struct UpdateAlertRequest {
+        pub threshold: i32,
+    }
+
     #[derive(Debug, Deserialize)]
     pub struct UserUpdateRequest {
         pub interests: Option<Vec<String>>,

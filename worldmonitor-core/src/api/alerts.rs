@@ -10,7 +10,7 @@ use tracing::{info, warn};
 use crate::{
     auth::{authenticate, AuthError},
     models::{
-        requests::AlertRequest,
+        requests::{AlertRequest, UpdateAlertRequest},
         responses::{AlertInfo, AlertsResponse, ErrorResponse, SuccessResponse},
     },
     AppState,
@@ -159,6 +159,39 @@ pub async fn delete_handler(
 
     info!("Deleted alert {} for user {}", id, authed.user_id);
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// PATCH /api/alerts/:id - Change an alert's severity threshold (owner-scoped).
+pub async fn update_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    AxumJson(request): AxumJson<UpdateAlertRequest>,
+) -> Result<Json<SuccessResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let authed = authenticate(&state, &headers).await.map_err(auth_err)?;
+
+    let threshold = request.threshold.clamp(1, 10);
+    let updated = state
+        .db
+        .update_alert_threshold(&authed.user_id, id, threshold)
+        .await
+        .map_err(|e| {
+            tracing::error!("Database error updating alert: {}", e);
+            err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to update alert")
+        })?;
+
+    if !updated {
+        return Err(err(StatusCode::NOT_FOUND, "No such alert"));
+    }
+
+    info!(
+        "Updated alert {} threshold to {} for user {}",
+        id, threshold, authed.user_id
+    );
+    Ok(Json(SuccessResponse {
+        success: true,
+        message: Some(format!("Alert updated to severity ≥ {}", threshold)),
+    }))
 }
 
 fn auth_err(e: AuthError) -> (StatusCode, Json<ErrorResponse>) {

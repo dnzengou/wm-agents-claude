@@ -635,6 +635,24 @@ impl Database {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Update the severity threshold of an alert the caller owns. Returns
+    /// `true` if a row was changed; owner-scoped like `delete_alert`.
+    pub async fn update_alert_threshold(
+        &self,
+        user_id: &str,
+        id: i64,
+        threshold: i32,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query("UPDATE alerts SET threshold = ? WHERE id = ? AND user_id = ?")
+            .bind(threshold)
+            .bind(id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     /// Idempotency guard for delivery: record that `event_id` has been pushed to
     /// `user_id`. Returns `true` only the first time (insert landed), so callers
     /// send exactly once even when the same event is re-fused across cycles.
@@ -966,6 +984,19 @@ mod tests {
         // A user can't delete someone else's alert.
         let other_id = db.get_alerts("u2").await.unwrap()[0].id;
         assert!(!db.delete_alert("u1", other_id).await.unwrap());
+
+        // Update threshold is owner-scoped and reflected on read.
+        let a0 = db.get_alerts("u1").await.unwrap()[0].id;
+        assert!(db.update_alert_threshold("u1", a0, 9).await.unwrap());
+        assert!(!db.update_alert_threshold("u2", a0, 1).await.unwrap());
+        let updated = db
+            .get_alerts("u1")
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == a0)
+            .unwrap();
+        assert_eq!(updated.threshold, 9);
 
         // Deleting an owned alert removes exactly it.
         let one = mine[0].id;
