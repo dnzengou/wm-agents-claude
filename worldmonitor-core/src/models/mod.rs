@@ -203,6 +203,18 @@ pub struct Alert {
     pub created_at: Option<DateTime<Utc>>,
 }
 
+/// A handle+passphrase that names an account for cross-device sign-in.
+/// Only a PBKDF2-HMAC-SHA256 hash of the passphrase (with `salt`/`iterations`)
+/// is stored — never the passphrase itself.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AccountLink {
+    pub handle: String,
+    pub user_id: String,
+    pub salt: String,
+    pub hash: String,
+    pub iterations: i64,
+}
+
 /// Programmatic API key for Enterprise access.
 ///
 /// The raw token (`wm_…`) is shown to the user exactly once at creation; only
@@ -786,6 +798,13 @@ pub mod requests {
         pub telegram_bot_token: Option<String>,
         pub telegram_chat_id: Option<String>,
     }
+
+    /// POST /api/account/link and /api/account/signin — handle + passphrase.
+    #[derive(Debug, Deserialize)]
+    pub struct AccountCredentials {
+        pub handle: String,
+        pub passphrase: String,
+    }
 }
 
 pub mod responses {
@@ -893,6 +912,22 @@ pub mod responses {
         pub telegram_chat_id: Option<String>,
         /// Whether the caller's tier actually delivers pushes (paid only).
         pub delivery_enabled: bool,
+    }
+
+    /// GET /api/account/status — is this browser's account named for sync?
+    #[derive(Debug, Serialize)]
+    pub struct AccountStatusResponse {
+        pub user_id: String,
+        pub linked: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub handle: Option<String>,
+    }
+
+    /// POST /api/account/signin — the account id to adopt on this device.
+    #[derive(Debug, Serialize)]
+    pub struct SignInResponse {
+        pub user_id: String,
+        pub handle: String,
     }
 
     /// A single alert subscription in a listing.

@@ -25,7 +25,8 @@ mod models;
 mod notify;
 
 use api::{
-    alerts, billing, brief, geo, history, intelligence, keys, notifications, sse, sync, user,
+    account, alerts, billing, brief, geo, history, intelligence, keys, notifications, sse, sync,
+    user,
 };
 use cache::Cache;
 use db::Database;
@@ -329,6 +330,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/sync", get(sync::handler))
         .route("/api/user", get(user::get_handler).post(user::post_handler))
+        // ── Account: cross-device sign-in (handle + passphrase) ──────────────
+        .route("/api/account/status", get(account::status_handler))
+        .route("/api/account/link", post(account::link_handler))
+        .route("/api/account/signin", post(account::signin_handler))
         // ── Paid-tier features ───────────────────────────────────────────────
         // 90-day history (Pro), API keys (Enterprise), Slack/Telegram delivery.
         .route("/api/history", get(history::handler))

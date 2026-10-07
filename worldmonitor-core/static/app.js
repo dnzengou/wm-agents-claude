@@ -43,6 +43,45 @@ const API = {
         return { 'X-User-Id': this.uid(), ...extra };
     },
 
+    // ---- Cross-device sign-in (handle + passphrase) -------------------------
+
+    // Whether this browser's account is named for sync ({ user_id, linked, handle }).
+    async accountStatus() {
+        const res = await fetch(`${this.baseUrl}/api/account/status`, {
+            headers: this.authHeaders()
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to load account');
+        return data;
+    },
+
+    // Name the current account so it can be adopted elsewhere.
+    async linkAccount(handle, passphrase) {
+        const res = await fetch(`${this.baseUrl}/api/account/link`, {
+            method: 'POST',
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ handle, passphrase })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to link account');
+        return data;
+    },
+
+    // Adopt the account a handle + passphrase points to: switch this browser's
+    // identity to it so every endpoint resolves to that account.
+    async signIn(handle, passphrase) {
+        const res = await fetch(`${this.baseUrl}/api/account/signin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ handle, passphrase })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Sign-in failed');
+        try { localStorage.setItem('wm_uid', data.user_id); } catch { /* storage blocked */ }
+        this._uid = data.user_id;
+        return data;
+    },
+
     async getIntelligence() {
         const res = await fetch(`${this.baseUrl}/api/intelligence`);
         if (!res.ok) throw new Error('Failed to fetch intelligence');
@@ -1144,6 +1183,105 @@ function AlertsPanel({ initialCountry, onConsumed }) {
     `;
 }
 
+// ============== Settings: Account sync (cross-device sign-in) ==============
+// Two modes:
+//  - Unlinked: name this browser's account with a handle + passphrase so it can
+//    be adopted elsewhere. On success, the panel flips to "linked" state.
+//  - Linked:   show the handle and offer to sign in on a different device.
+// A separate "Already have an account?" row calls signIn: on success, this
+// browser's identity switches to the adopted account and we reload so every
+// panel re-fetches with the new uid.
+function AccountPanel() {
+    const [status, setStatus] = useState(null);
+    const [handle, setHandle] = useState('');
+    const [passphrase, setPassphrase] = useState('');
+    const [linkMsg, setLinkMsg] = useState(null);
+    const [linking, setLinking] = useState(false);
+    const [signHandle, setSignHandle] = useState('');
+    const [signPass, setSignPass] = useState('');
+    const [signMsg, setSignMsg] = useState(null);
+    const [signing, setSigning] = useState(false);
+
+    const refresh = useCallback(async () => {
+        try { setStatus(await API.accountStatus()); }
+        catch (e) { setLinkMsg({ ok: false, text: e.message }); }
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const link = useCallback(async () => {
+        const h = handle.trim();
+        if (!h) { setLinkMsg({ ok: false, text: 'Pick a handle.' }); return; }
+        if (passphrase.length < 8) { setLinkMsg({ ok: false, text: 'Passphrase must be at least 8 characters.' }); return; }
+        setLinking(true); setLinkMsg(null);
+        try {
+            const r = await API.linkAccount(h, passphrase);
+            setLinkMsg({ ok: true, text: r.message || `Linked as ${h}.` });
+            setPassphrase('');
+            refresh();
+        } catch (e) { setLinkMsg({ ok: false, text: e.message }); }
+        setLinking(false);
+    }, [handle, passphrase, refresh]);
+
+    const signin = useCallback(async () => {
+        const h = signHandle.trim();
+        if (!h || signPass.length < 1) { setSignMsg({ ok: false, text: 'Enter handle and passphrase.' }); return; }
+        setSigning(true); setSignMsg(null);
+        try {
+            await API.signIn(h, signPass);
+            setSignMsg({ ok: true, text: 'Signed in — reloading…' });
+            // Reload so every panel re-fetches under the adopted uid.
+            setTimeout(() => { try { location.reload(); } catch { /* noop */ } }, 400);
+        } catch (e) { setSignMsg({ ok: false, text: e.message }); setSigning(false); }
+    }, [signHandle, signPass]);
+
+    const linked = !!(status && status.linked);
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>👤 Account Sync</h3>
+                <span class="badge">${linked ? 'linked' : 'local only'}</span>
+            </div>
+            <p class="panel-sub">
+                Name this account with a handle + passphrase so you can sign in on another device —
+                your tier, alerts, history and API keys follow the handle, not the browser.
+            </p>
+            ${linked
+                ? htmlx`
+                    <div class="key-row">
+                        <div style="min-width:0;">
+                            <div class="history-headline">${status.handle}</div>
+                            <div class="key-meta">Sign in with this handle + passphrase on another device.</div>
+                        </div>
+                    </div>
+                `
+                : htmlx`
+                    <div class="form-row">
+                        <input placeholder="Handle (e.g. alice)" value=${handle}
+                            onInput=${e => setHandle(e.target.value)} autocomplete="off" />
+                        <input placeholder="Passphrase (≥ 8 chars)" value=${passphrase} type="password"
+                            onInput=${e => setPassphrase(e.target.value)} autocomplete="new-password" />
+                        <button class="btn-sm" onClick=${link} disabled=${linking}>
+                            ${linking ? 'Linking…' : 'Link'}
+                        </button>
+                    </div>
+                `}
+            ${linkMsg && htmlx`<p class="msg ${linkMsg.ok ? 'ok' : 'err'}">${linkMsg.text}</p>`}
+
+            <p class="panel-sub" style="margin-top:0.9rem;">Already have an account? Sign in on this device:</p>
+            <div class="form-row">
+                <input placeholder="Handle" value=${signHandle}
+                    onInput=${e => setSignHandle(e.target.value)} autocomplete="off" />
+                <input placeholder="Passphrase" value=${signPass} type="password"
+                    onInput=${e => setSignPass(e.target.value)} autocomplete="current-password" />
+                <button class="btn-sm" onClick=${signin} disabled=${signing}>
+                    ${signing ? 'Signing in…' : 'Sign in'}
+                </button>
+            </div>
+            ${signMsg && htmlx`<p class="msg ${signMsg.ok ? 'ok' : 'err'}">${signMsg.text}</p>`}
+        </div>
+    `;
+}
+
 // ============== Settings view ==============
 function Settings({ tier, alertPrefill, onPrefillConsumed }) {
     const isPaid = !!tier && tier.tier !== 'free';
@@ -1153,6 +1291,7 @@ function Settings({ tier, alertPrefill, onPrefillConsumed }) {
             <div class="account-note">
                 Account <code>${API.uid()}</code> · saved to this browser
             </div>
+            <${AccountPanel} />
             <${HistoryPanel} tier=${tier} />
             <${AlertsPanel} initialCountry=${alertPrefill} onConsumed=${onPrefillConsumed} />
             <${NotificationsPanel} isPaid=${isPaid} />

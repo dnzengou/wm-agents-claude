@@ -5,7 +5,7 @@ use sqlx::{
 use std::str::FromStr;
 use tracing::info;
 
-use crate::models::{Alert, ApiKey, IntelEvent, NotificationChannels, User};
+use crate::models::{AccountLink, Alert, ApiKey, IntelEvent, NotificationChannels, User};
 
 /// Database wrapper for SQLite/D1 operations
 #[derive(Clone)]
@@ -208,6 +208,28 @@ impl Database {
         )
         .execute(&self.pool)
         .await?;
+
+        // Cross-device sign-in: a handle + passphrase names an account so it can
+        // be adopted on another device. Only a PBKDF2-HMAC-SHA256 hash of the
+        // passphrase (with a per-row salt) is stored — never the passphrase.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS account_links (
+                handle TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                iterations INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_account_links_user ON account_links(user_id)")
+            .execute(&self.pool)
+            .await?;
 
         info!("Database migrations completed successfully");
         Ok(())
@@ -805,6 +827,60 @@ impl Database {
         Ok(())
     }
 
+    // ==================== Account Link Operations ====================
+
+    /// Fetch the account-link record for a handle (for sign-in verification).
+    pub async fn get_account_link(&self, handle: &str) -> anyhow::Result<Option<AccountLink>> {
+        let link = sqlx::query_as::<_, AccountLink>(
+            "SELECT handle, user_id, salt, hash, iterations FROM account_links WHERE handle = ?",
+        )
+        .bind(handle)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(link)
+    }
+
+    /// The handle a user's account is named by, if any (for status display).
+    pub async fn get_link_for_user(&self, user_id: &str) -> anyhow::Result<Option<String>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT handle FROM account_links WHERE user_id = ? LIMIT 1")
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(h,)| h))
+    }
+
+    /// Name an account with a handle + passphrase hash. Fails with `false` when
+    /// the handle is already taken (the caller must sign in instead). The owning
+    /// user row is ensured so the FK holds.
+    pub async fn create_account_link(
+        &self,
+        handle: &str,
+        user_id: &str,
+        salt: &str,
+        hash: &str,
+        iterations: i64,
+    ) -> anyhow::Result<bool> {
+        self.get_or_create_user(user_id).await?;
+
+        let result = sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO account_links (handle, user_id, salt, hash, iterations)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(handle)
+        .bind(user_id)
+        .bind(salt)
+        .bind(hash)
+        .bind(iterations)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() == 1)
+    }
+
     // ==================== Brief Cache Operations ====================
 
     /// Get cached brief
@@ -968,10 +1044,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_alerts_crud() {
+    async fn test_account_link() {
         let db = Database::new("sqlite::memory:").await.unwrap();
         db.run_migrations().await.unwrap();
 
+        // Name account u1 with handle "alice".
+        assert!(db
+            .create_account_link("alice", "u1", "salt", "hash", 100_000)
+            .await
+            .unwrap());
+        // The handle is taken — a second claim (even by another user) fails.
+        assert!(!db
+            .create_account_link("alice", "u2", "s2", "h2", 100_000)
+            .await
+            .unwrap());
+
+        let link = db.get_account_link("alice").await.unwrap().unwrap();
+        assert_eq!(link.user_id, "u1");
+        assert_eq!(link.hash, "hash");
+        assert_eq!(link.iterations, 100_000);
+
+        assert_eq!(
+            db.get_link_for_user("u1").await.unwrap().as_deref(),
+            Some("alice")
+        );
+        assert!(db.get_account_link("bob").await.unwrap().is_none());
+        assert!(db.get_link_for_user("u2").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_alerts_crud() {
+        let db = Database::new("sqlite::memory:").await.unwrap();
+        db.run_migrations().await.unwrap();
         db.create_alert("u1", "Ukraine", 7).await.unwrap();
         db.create_alert("u1", "Taiwan", 5).await.unwrap();
         db.create_alert("u2", "Iran", 8).await.unwrap();
