@@ -175,8 +175,15 @@ async fn health() -> axum::Json<serde_json::Value> {
 
 // ─── Static file serving ─────────────────────────────────────────────────────
 
-async fn serve_frontend() -> axum::response::Html<&'static str> {
-    axum::response::Html(include_str!("../static/index.html"))
+async fn serve_frontend(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::response::Response {
+    use axum::http::header;
+    // Template `{{BASE_URL}}` into canonical, og:url, and the JSON-LD graph
+    // so the live origin propagates without a per-host rebuild.
+    let body =
+        include_str!("../static/index.html").replace("{{BASE_URL}}", &state.config.app_base_url);
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response()
 }
 
 /// Serve a JS module with the correct MIME type. ES modules are rejected by
@@ -191,10 +198,21 @@ fn js(body: &'static str) -> axum::response::Response {
         .into_response()
 }
 
+/// Serve a text/markdown/xml/manifest file with `{{BASE_URL}}` replaced by
+/// the live origin (from `APP_BASE_URL`), so sitemap, robots and llms always
+/// advertise the real deployment URL without needing a rebuild per host.
+fn tpl(body: &'static str, base_url: &str, content_type: &'static str) -> axum::response::Response {
+    use axum::http::header;
+    let rendered = body.replace("{{BASE_URL}}", base_url);
+    ([(header::CONTENT_TYPE, content_type)], rendered).into_response()
+}
+
 async fn serve_static(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> axum::response::Response {
     use axum::http::StatusCode;
+    let base = state.config.app_base_url.as_str();
     match path.as_str() {
         "app.js" => js(include_str!("../static/app.js")),
         // Locally-vendored ESM dependencies (no CDN). See static/vendor/.
@@ -202,6 +220,49 @@ async fn serve_static(
         "vendor/hooks.mjs" => js(include_str!("../static/vendor/hooks.mjs")),
         "vendor/htm.mjs" => js(include_str!("../static/vendor/htm.mjs")),
         "vendor/htm-preact.mjs" => js(include_str!("../static/vendor/htm-preact.mjs")),
+        // ── AI-agent / SEO well-known files ──────────────────────────────
+        // Public, BASE_URL-templated at response time so the live origin
+        // propagates into sitemap and canonical-URL fields without a rebuild.
+        "robots.txt" => tpl(
+            include_str!("../static/robots.txt"),
+            base,
+            "text/plain; charset=utf-8",
+        ),
+        "sitemap.xml" => tpl(
+            include_str!("../static/sitemap.xml"),
+            base,
+            "application/xml; charset=utf-8",
+        ),
+        "llms.txt" => tpl(
+            include_str!("../static/llms.txt"),
+            base,
+            "text/markdown; charset=utf-8",
+        ),
+        "llms-full.txt" => tpl(
+            include_str!("../static/llms-full.txt"),
+            base,
+            "text/markdown; charset=utf-8",
+        ),
+        "ai.txt" => tpl(
+            include_str!("../static/ai.txt"),
+            base,
+            "text/plain; charset=utf-8",
+        ),
+        "humans.txt" => tpl(
+            include_str!("../static/humans.txt"),
+            base,
+            "text/plain; charset=utf-8",
+        ),
+        ".well-known/security.txt" => tpl(
+            include_str!("../static/security.txt"),
+            base,
+            "text/plain; charset=utf-8",
+        ),
+        "manifest.webmanifest" => tpl(
+            include_str!("../static/manifest.webmanifest"),
+            base,
+            "application/manifest+json; charset=utf-8",
+        ),
         _ => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }

@@ -3,10 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="Real-time global intelligence monitoring - 10x faster, 29x lighter">
+
+    <title>WorldMonitor Core — Real-Time Global Intelligence &amp; Alerts</title>
+    <meta name="description" content="Real-time global intelligence monitoring: live map of geopolitical, natural and cyber events from GDELT, NASA EONET and curated RSS, with on-demand country briefs and severity-triggered Slack/Telegram alerts.">
+    <meta name="keywords" content="global intelligence, real-time intelligence, OSINT, GDELT, NASA EONET, situational awareness, geopolitical events, cyber events, natural disasters, country briefs, severity alerts, Slack alerts, Telegram alerts, Rust, Preact, single-binary">
+    <meta name="author" content="WorldMonitor Core">
+    <meta name="publisher" content="WorldMonitor Core">
+    <meta name="application-name" content="WorldMonitor Core">
+    <meta name="generator" content="WorldMonitor Core">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+    <meta name="googlebot" content="index, follow">
+    <meta name="rating" content="general">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta name="color-scheme" content="dark light">
     <meta name="theme-color" content="#0a0a0f">
-    <title>WorldMonitor Core - Real-Time Intelligence</title>
+    <link rel="canonical" href="{{BASE_URL}}/">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="alternate" type="text/markdown" title="LLM index (short)" href="/llms.txt">
+    <link rel="alternate" type="text/markdown" title="LLM reference (full)" href="/llms-full.txt">
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+    <!-- Open Graph / social previews -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="WorldMonitor Core">
+    <meta property="og:title" content="WorldMonitor Core — Real-Time Global Intelligence &amp; Alerts">
+    <meta property="og:description" content="Live map of geopolitical, natural and cyber events from GDELT, NASA EONET and curated RSS. On-demand country briefs and severity-triggered Slack/Telegram alerts.">
+    <meta property="og:url" content="{{BASE_URL}}/">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 630'%3E%3Crect width='1200' height='630' fill='%230a0a0f'/%3E%3Ctext x='600' y='330' font-size='84' fill='%2360a5fa' text-anchor='middle' font-family='sans-serif' font-weight='700'%3E⚡ WorldMonitor Core%3C/text%3E%3Ctext x='600' y='410' font-size='36' fill='%2394a3b8' text-anchor='middle' font-family='sans-serif'%3EReal-Time Global Intelligence%3C/text%3E%3C/svg%3E">
+    <meta property="og:image:type" content="image/svg+xml">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="WorldMonitor Core — Real-Time Global Intelligence">
+
+    <!-- Twitter / X Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="WorldMonitor Core — Real-Time Global Intelligence &amp; Alerts">
+    <meta name="twitter:description" content="Live map of geopolitical, natural and cyber events. On-demand country briefs. Slack/Telegram alerts. One Rust binary, no CDN.">
+    <meta name="twitter:image" content="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 630'%3E%3Crect width='1200' height='630' fill='%230a0a0f'/%3E%3Ctext x='600' y='330' font-size='84' fill='%2360a5fa' text-anchor='middle' font-family='sans-serif' font-weight='700'%3E⚡ WorldMonitor Core%3C/text%3E%3Ctext x='600' y='410' font-size='36' fill='%2394a3b8' text-anchor='middle' font-family='sans-serif'%3EReal-Time Global Intelligence%3C/text%3E%3C/svg%3E">
+
+    <!-- Structured data: Organization, WebSite, SoftwareApplication, FAQPage.
+         Rendered as JSON-LD so AI retrieval agents and search engines can
+         parse canonical facts (name, pricing tiers, FAQ) directly without
+         executing JS. -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "Organization",
+                "@id": "{{BASE_URL}}/#org",
+                "name": "WorldMonitor Core",
+                "url": "{{BASE_URL}}/",
+                "sameAs": ["https://github.com/dnzengou/wm-agents-claude"]
+            },
+            {
+                "@type": "WebSite",
+                "@id": "{{BASE_URL}}/#site",
+                "url": "{{BASE_URL}}/",
+                "name": "WorldMonitor Core",
+                "inLanguage": "en",
+                "publisher": { "@id": "{{BASE_URL}}/#org" }
+            },
+            {
+                "@type": "SoftwareApplication",
+                "@id": "{{BASE_URL}}/#app",
+                "name": "WorldMonitor Core",
+                "description": "Real-time global intelligence monitoring. Fuses GDELT, NASA EONET and curated RSS into a live map of geopolitical, natural and cyber events, with on-demand country briefs and severity-triggered Slack/Telegram alerts.",
+                "applicationCategory": "BusinessApplication",
+                "applicationSubCategory": "Intelligence",
+                "operatingSystem": "Web",
+                "url": "{{BASE_URL}}/",
+                "publisher": { "@id": "{{BASE_URL}}/#org" },
+                "offers": [
+                    {
+                        "@type": "Offer",
+                        "name": "Free",
+                        "price": "0",
+                        "priceCurrency": "USD",
+                        "description": "Live map, on-demand country briefs, up to 3 alerts with Slack/Telegram delivery, 7-day event history.",
+                        "availability": "https://schema.org/InStock"
+                    },
+                    {
+                        "@type": "Offer",
+                        "name": "Pro",
+                        "price": "9",
+                        "priceCurrency": "USD",
+                        "priceSpecification": { "@type": "UnitPriceSpecification", "price": "9", "priceCurrency": "USD", "billingDuration": "P1M", "unitCode": "MON" },
+                        "description": "Unlimited alerts, 90-day event history with full-text search, CSV export.",
+                        "availability": "https://schema.org/InStock"
+                    },
+                    {
+                        "@type": "Offer",
+                        "name": "Enterprise",
+                        "price": "49",
+                        "priceCurrency": "USD",
+                        "priceSpecification": { "@type": "UnitPriceSpecification", "price": "49", "priceCurrency": "USD", "billingDuration": "P1M", "unitCode": "MON" },
+                        "description": "wm_ API keys, longer LLM context for briefs, priority ingestion, direct support.",
+                        "availability": "https://schema.org/InStock"
+                    }
+                ]
+            },
+            {
+                "@type": "FAQPage",
+                "@id": "{{BASE_URL}}/#faq",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": "What problem does WorldMonitor Core solve?",
+                        "acceptedAnswer": { "@type": "Answer", "text": "A real-time awareness feed — the kind a 24/7 ops center would run on a wall monitor — but affordable to self-host and small enough to embed in another product. One Rust binary, three open feeds, a sensible default severity model out of the box." }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Where does the data come from?",
+                        "acceptedAnswer": { "@type": "Answer", "text": "Three open sources: GDELT 2.1 (global events, machine-coded), NASA EONET v3 (natural events), and a curated RSS set including Reuters, AP, ArsTechnica, KrebsOnSecurity, SpaceNews, Al Jazeera, RFI and BBC. Country briefs are summarized by a hosted LLM on Groq." }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Is the LLM involved in severity scoring?",
+                        "acceptedAnswer": { "@type": "Answer", "text": "No. Severity is a deterministic function of feature detectors in the Rust core. The LLM is only used to compose the per-country natural-language brief when a user asks for one, which keeps scoring reproducible and auditable." }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "What AI agents and LLM crawlers are allowed?",
+                        "acceptedAnswer": { "@type": "Answer", "text": "All public AI and search crawlers are allowed. robots.txt enumerates GPTBot, OAI-SearchBot, ClaudeBot, PerplexityBot, Google-Extended, Googlebot, Bingbot, Applebot, CCBot, cohere-ai, Bytespider and others. Only /api/ paths are disallowed because they return per-user data or SSE streams." }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "How are alerts delivered?",
+                        "acceptedAnswer": { "@type": "Answer", "text": "Each ingestion tick runs the new-event batch against every alert subscription. A match (country + severity threshold) enqueues a dispatch to the user's Slack webhook or Telegram bot, keyed by (user_id, event_id) so an overlapping re-fusion never notifies twice." }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Is there an API?",
+                        "acceptedAnswer": { "@type": "Answer", "text": "Yes, on the Enterprise tier. A key is wm_ plus 32 random bytes, hashed with PBKDF2 before storage, scoped to one account, and revocable from the settings UI. Send it as Authorization: Bearer wm_… or X-API-Key: wm_…." }
+                    }
+                ]
+            }
+        ]
+    }
+    </script>
+
     <!-- Vendored locally (see static/vendor/) so the app has no CDN/network
          dependency and works offline and under a strict CSP. -->
     <script type="importmap">
@@ -654,6 +792,82 @@
     </style>
 </head>
 <body>
+    <!-- Fallback content for user agents that do not execute JavaScript —
+         notably some retrieval crawlers and answer-engine fetchers. The SPA
+         renders into #app below; this block is replaced by the interactive
+         app on hydration. Same substance as the live UI — no cloaking. -->
+    <noscript>
+        <main class="seo-shell" style="max-width:800px;margin:0 auto;padding:2rem 1rem;">
+            <header>
+                <h1 style="color:#60a5fa;font-size:1.5rem;">⚡ WorldMonitor Core</h1>
+                <p style="color:#94a3b8;">Real-time global intelligence monitoring. Live map of geopolitical, natural and cyber events, with on-demand country briefs and severity-triggered Slack/Telegram alerts. One Rust binary, no CDN.</p>
+            </header>
+
+            <section id="features" style="margin-top:2rem;">
+                <h2 style="color:#f8fafc;font-size:1.2rem;">What it does</h2>
+                <ul style="color:#cbd5e1;line-height:1.7;">
+                    <li><strong>Live map</strong> — events from <a href="https://www.gdeltproject.org/" rel="noopener">GDELT</a>, <a href="https://eonet.gsfc.nasa.gov/" rel="noopener">NASA EONET</a> and curated RSS, fused and severity-scored in real time.</li>
+                    <li><strong>Country briefs</strong> — on-demand natural-language summaries generated by a hosted LLM.</li>
+                    <li><strong>Alerts</strong> — subscribe to severity thresholds per country; delivery via Slack webhook or Telegram bot.</li>
+                    <li><strong>History</strong> — 7 days on Free, 90 days with full-text search and CSV export on Pro.</li>
+                    <li><strong>API</strong> — <code>wm_</code>-prefixed keys on the Enterprise tier for programmatic access.</li>
+                    <li><strong>Cross-device</strong> — optional handle + passphrase to sign in on another browser.</li>
+                </ul>
+            </section>
+
+            <section id="pricing" style="margin-top:2rem;">
+                <h2 style="color:#f8fafc;font-size:1.2rem;">Pricing</h2>
+                <ul style="color:#cbd5e1;line-height:1.7;">
+                    <li><strong>Free — $0.</strong> Live map, briefs, 3 alerts, 7-day history.</li>
+                    <li><strong>Pro — $9/month.</strong> Unlimited alerts, 90-day history, full-text search, CSV export.</li>
+                    <li><strong>Enterprise — $49/month.</strong> API keys, longer LLM context, priority ingestion, direct support.</li>
+                </ul>
+            </section>
+
+            <section id="faq" style="margin-top:2rem;">
+                <h2 style="color:#f8fafc;font-size:1.2rem;">FAQ</h2>
+                <h3 style="color:#60a5fa;font-size:1rem;margin-top:1rem;">What problem does WorldMonitor Core solve?</h3>
+                <p style="color:#cbd5e1;line-height:1.7;">A real-time awareness feed — the kind a 24/7 ops center would run on a wall monitor — but affordable to self-host and small enough to embed in another product. One Rust binary, three open feeds, a sensible default severity model out of the box.</p>
+
+                <h3 style="color:#60a5fa;font-size:1rem;margin-top:1rem;">Where does the data come from?</h3>
+                <p style="color:#cbd5e1;line-height:1.7;">Three open sources: GDELT 2.1 (global events, machine-coded), NASA EONET v3 (natural events), and a curated RSS set including Reuters, AP, ArsTechnica, KrebsOnSecurity, SpaceNews, Al Jazeera, RFI and BBC.</p>
+
+                <h3 style="color:#60a5fa;font-size:1rem;margin-top:1rem;">Is the LLM involved in severity scoring?</h3>
+                <p style="color:#cbd5e1;line-height:1.7;">No. Severity is a deterministic function of feature detectors in the Rust core. The LLM is only used to compose the per-country natural-language brief when a user asks for one, which keeps scoring reproducible and auditable.</p>
+
+                <h3 style="color:#60a5fa;font-size:1rem;margin-top:1rem;">Can I self-host it?</h3>
+                <p style="color:#cbd5e1;line-height:1.7;">Yes. The Rust binary is the only moving part — SQLite is embedded, no external database or queue. Minimum: one small VM with ~256 MB RAM and outbound HTTPS.</p>
+            </section>
+
+            <section id="trust" style="margin-top:2rem;">
+                <h2 style="color:#f8fafc;font-size:1.2rem;">Trust &amp; transparency</h2>
+                <ul style="color:#cbd5e1;line-height:1.7;">
+                    <li><strong>Open-source.</strong> Repo: <a href="https://github.com/dnzengou/wm-agents-claude" rel="noopener">github.com/dnzengou/wm-agents-claude</a>.</li>
+                    <li><strong>Security.</strong> Coordinated-disclosure contact at <a href="/.well-known/security.txt">/.well-known/security.txt</a> (RFC 9116).</li>
+                    <li><strong>Attribution.</strong> Every event card links back to its upstream source URL — we classify and index, not republish.</li>
+                    <li><strong>Privacy.</strong> Passphrases are stored as PBKDF2-SHA256 hashes with per-record random salt; no plaintext.</li>
+                    <li><strong>Billing.</strong> Stripe (HMAC-verified webhooks).</li>
+                </ul>
+            </section>
+
+            <section id="ai-agents" style="margin-top:2rem;">
+                <h2 style="color:#f8fafc;font-size:1.2rem;">For AI agents &amp; LLM crawlers</h2>
+                <p style="color:#cbd5e1;line-height:1.7;">
+                    This site is deliberately open to AI retrieval. See
+                    <a href="/llms.txt">/llms.txt</a> (short index) and
+                    <a href="/llms-full.txt">/llms-full.txt</a> (full Markdown reference),
+                    both served as <code>text/markdown</code>. Crawler policy:
+                    <a href="/robots.txt">/robots.txt</a>, consent policy:
+                    <a href="/ai.txt">/ai.txt</a>, machine index:
+                    <a href="/sitemap.xml">/sitemap.xml</a>.
+                </p>
+            </section>
+
+            <footer style="margin-top:3rem;padding-top:1rem;border-top:1px solid #334155;color:#94a3b8;font-size:0.8rem;">
+                <p>© WorldMonitor Core · <a href="/humans.txt">humans.txt</a> · <a href="/.well-known/security.txt">security.txt</a> · <a href="/llms.txt">llms.txt</a></p>
+            </footer>
+        </main>
+    </noscript>
     <div id="app"></div>
     <script type="module" src="/app.js"></script>
 </body>

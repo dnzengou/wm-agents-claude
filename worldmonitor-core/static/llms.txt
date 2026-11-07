@@ -1,0 +1,42 @@
+# WorldMonitor Core
+
+> Real-time global intelligence monitoring. WorldMonitor fuses GDELT, NASA
+> EONET and curated RSS into a single live map of geopolitical, natural
+> and cyber events, with per-country briefs generated on demand and
+> severity-triggered alerts delivered to Slack and Telegram. Served from
+> a single Rust (Axum) binary with a dependency-free Preact UI, it is
+> **10x faster and 29x lighter** than a typical equivalent Node stack
+> and runs offline with no CDN calls.
+
+The canonical experience is a progressive-web single-page app at the
+root URL. Public pages, feeds and documentation files below are safe to
+fetch, cite, and summarize. The JSON API is **private**: calls require
+either a per-browser `X-User-Id` identity or a `wm_` API key (Enterprise
+tier) and should not be mirrored.
+
+## Product
+
+- [Landing page](/): map, country briefs, pricing, FAQ.
+- [Health check](/health): JSON liveness probe.
+- [Pricing (anchor)](/#pricing): Free / Pro / Enterprise tiers and features.
+- [FAQ (anchor)](/#faq): common questions, data sources, limits.
+
+## For LLMs & agents
+
+- [llms-full.txt](/llms-full.txt): full-detail Markdown pack of the above (~a few KB).
+- [ai.txt](/ai.txt): AI usage and attribution policy.
+- [humans.txt](/humans.txt): people behind the project.
+
+## Operations & trust
+
+- [security.txt](/.well-known/security.txt): coordinated-disclosure contact (RFC 9116).
+- [robots.txt](/robots.txt): explicit crawler policy (AI crawlers allowed).
+- [sitemap.xml](/sitemap.xml): machine-readable URL index.
+- [Web app manifest](/manifest.webmanifest): installable PWA metadata.
+
+## Data sources
+
+- GDELT 2.1 Geo-Events feed — geopolitical signal.
+- NASA EONET v3 — natural events (storms, wildfires, volcanoes).
+- Curated RSS (Reuters, AP, ArsTechnica, KrebsOnSecurity, SpaceNews and more) — editorial depth.
+- Groq-hosted LLM — brief generation.

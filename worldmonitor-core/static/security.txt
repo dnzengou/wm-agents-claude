@@ -1,0 +1,12 @@
+# Coordinated-disclosure contact per RFC 9116.
+# If you believe you've found a security issue, please reach out before
+# disclosing publicly. Reports in any of the languages listed below are
+# welcome.
+
+Contact: https://github.com/dnzengou/wm-agents-claude/security/advisories/new
+Contact: mailto:security@worldmonitor.invalid
+Expires: 2027-11-07T00:00:00Z
+Preferred-Languages: en, fr
+Canonical: {{BASE_URL}}/.well-known/security.txt
+Policy: https://github.com/dnzengou/wm-agents-claude/security/policy
+Acknowledgments: https://github.com/dnzengou/wm-agents-claude/security
