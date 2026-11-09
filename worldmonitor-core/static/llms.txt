@@ -24,6 +24,9 @@ tier) and should not be mirrored.
 ## For LLMs & agents
 
 - [llms-full.txt](/llms-full.txt): full-detail Markdown pack of the above (~a few KB).
+- [OpenAPI 3.1 spec](/openapi.yaml): machine-readable API — list events, generate briefs, manage alerts. Wire a ChatGPT Action / Claude Agent against this.
+- [ChatGPT Actions manifest](/.well-known/ai-plugin.json): plugin discovery pointing at the OpenAPI spec.
+- [Atom feed](/feed.atom): live `application/atom+xml` feed of the latest 50 fused events.
 - [ai.txt](/ai.txt): AI usage and attribution policy.
 - [humans.txt](/humans.txt): people behind the project.
 

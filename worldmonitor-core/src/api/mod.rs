@@ -6,6 +6,7 @@ pub mod account;
 pub mod alerts;
 pub mod billing;
 pub mod brief;
+pub mod feed;
 pub mod geo;
 pub mod history;
 pub mod intelligence;

@@ -136,9 +136,44 @@ on an interactive 2D/3D world map alongside country-scoped briefs.
 | `/humans.txt` | People behind the project. |
 | `/.well-known/security.txt` | RFC 9116 security contact. |
 | `/manifest.webmanifest` | PWA metadata. |
+| `/openapi.yaml` | OpenAPI 3.1 specification of the public API (agent-consumable). |
+| `/openapi.json` | Alias to the same spec. |
+| `/.well-known/ai-plugin.json` | ChatGPT Actions / plugin discovery manifest. |
+| `/feed.atom` | Atom 1.0 feed of the latest 50 fused events. |
 
 Every other path under `/api/*` requires authentication and is not a
 public resource.
+
+---
+
+## Building an AI agent against WorldMonitor Core
+
+The service is designed to be driven by AI agents as a first-class
+client, not just by a browser. Three artifacts make that trivial:
+
+1. **OpenAPI 3.1 spec** at `/openapi.yaml` — a machine-consumable
+   contract for the public endpoints (events, briefs, geo, history,
+   alerts, account). `servers:` is templated to the live origin so
+   agents can clone the file and use it unchanged.
+2. **ChatGPT Actions manifest** at `/.well-known/ai-plugin.json` — the
+   `schema_version: v1` plugin descriptor pointing at the OpenAPI
+   spec. ChatGPT / Claude / Perplexity-style agent runners that look
+   for this file will configure themselves automatically.
+3. **Atom 1.0 feed** at `/feed.atom` — a `application/atom+xml`
+   representation of the latest 50 fused events, with `<link
+   rel="alternate">` pointing at each event's upstream source. Good
+   for non-OpenAPI retrieval crawlers and plain feed readers.
+
+**Auth for agents.** Generate a `wm_`-prefixed API key from the
+Settings → API Keys panel on the Enterprise tier. Send it as
+`Authorization: Bearer wm_…` (preferred) or `X-API-Key: wm_…`. The
+OpenAPI spec enumerates both schemes. `/api/intelligence` and
+`/api/brief` are callable unauthenticated on the free tier
+(rate-limited); `/api/history` and `/api/keys` require a key.
+
+**Rate limits.** Free: per-IP soft limit on `/api/brief`. Pro:
+unlimited briefs; soft cap on daily events. Enterprise: per-key quota
+visible in response headers.
 
 ---
 

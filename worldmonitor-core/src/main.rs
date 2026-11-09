@@ -25,8 +25,8 @@ mod models;
 mod notify;
 
 use api::{
-    account, alerts, billing, brief, geo, history, intelligence, keys, notifications, sse, sync,
-    user,
+    account, alerts, billing, brief, feed, geo, history, intelligence, keys, notifications, sse,
+    sync, user,
 };
 use cache::Cache;
 use db::Database;
@@ -263,6 +263,28 @@ async fn serve_static(
             base,
             "application/manifest+json; charset=utf-8",
         ),
+        // ── Agent-facing API discovery ───────────────────────────────────
+        // OpenAPI 3.1 spec (yaml primary, json alias). Templated so the
+        // `servers:` block always advertises the live origin.
+        "openapi.yaml" | "openapi.yml" => tpl(
+            include_str!("../static/openapi.yaml"),
+            base,
+            "application/yaml; charset=utf-8",
+        ),
+        "openapi.json" => tpl(
+            include_str!("../static/openapi.yaml"),
+            base,
+            // Served as text/plain because the source is YAML; agents that
+            // specifically want JSON should fetch /openapi.yaml and parse.
+            // Keeping the .json alias discoverable (sitemap) is still useful.
+            "application/yaml; charset=utf-8",
+        ),
+        // ChatGPT Actions / plugin discovery manifest.
+        ".well-known/ai-plugin.json" => tpl(
+            include_str!("../static/ai-plugin.json"),
+            base,
+            "application/json; charset=utf-8",
+        ),
         _ => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
@@ -413,6 +435,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/billing/checkout", post(billing::checkout_handler))
         .route("/api/billing/webhook", post(billing::webhook_handler))
         .route("/", get(serve_frontend))
+        // Public Atom feed of the live intelligence stream — agent- and
+        // feed-reader-friendly. Dynamic (reads the ingestion cache).
+        .route("/feed.atom", get(feed::handler))
         .route("/*path", get(serve_static))
         .layer(cors)
         .layer(CompressionLayer::new())

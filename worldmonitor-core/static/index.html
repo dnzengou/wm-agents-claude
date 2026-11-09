@@ -21,7 +21,11 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="alternate" type="text/markdown" title="LLM index (short)" href="/llms.txt">
     <link rel="alternate" type="text/markdown" title="LLM reference (full)" href="/llms-full.txt">
+    <link rel="alternate" type="application/atom+xml" title="Live intelligence feed (Atom)" href="/feed.atom">
     <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+    <!-- Agent-facing API discovery. -->
+    <link rel="service" type="application/yaml" href="/openapi.yaml" title="OpenAPI 3.1 specification">
+    <meta name="ai-plugin" content="/.well-known/ai-plugin.json">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 
     <!-- Open Graph / social previews -->
@@ -104,6 +108,47 @@
                         "availability": "https://schema.org/InStock"
                     }
                 ]
+            },
+            {
+                "@type": "Dataset",
+                "@id": "{{BASE_URL}}/#dataset",
+                "name": "WorldMonitor Core — Live Intelligence Events",
+                "description": "Severity-scored, deduplicated geopolitical, natural and cyber events fused from GDELT 2.1, NASA EONET v3 and curated news RSS. Updated every 15 minutes.",
+                "url": "{{BASE_URL}}/",
+                "keywords": ["global intelligence", "OSINT", "geopolitical events", "natural disasters", "cyber events", "GDELT", "NASA EONET", "real-time feed"],
+                "license": "https://creativecommons.org/licenses/by/4.0/",
+                "creator": { "@id": "{{BASE_URL}}/#org" },
+                "distribution": [
+                    {
+                        "@type": "DataDownload",
+                        "encodingFormat": "application/json",
+                        "contentUrl": "{{BASE_URL}}/api/intelligence"
+                    },
+                    {
+                        "@type": "DataDownload",
+                        "encodingFormat": "application/atom+xml",
+                        "contentUrl": "{{BASE_URL}}/feed.atom"
+                    },
+                    {
+                        "@type": "DataDownload",
+                        "encodingFormat": "text/event-stream",
+                        "contentUrl": "{{BASE_URL}}/api/stream"
+                    }
+                ],
+                "variableMeasured": [
+                    "country", "domain", "severity (1-10)", "headline", "source", "timestamp", "lat", "lon"
+                ],
+                "isAccessibleForFree": true,
+                "temporalCoverage": "2024-01-01/.."
+            },
+            {
+                "@type": "WebAPI",
+                "@id": "{{BASE_URL}}/#api",
+                "name": "WorldMonitor Core API",
+                "description": "Public API covering the live event feed, country briefs, geo enrichment, alert subscriptions and historical event lookup.",
+                "documentation": "{{BASE_URL}}/openapi.yaml",
+                "termsOfService": "{{BASE_URL}}/humans.txt",
+                "provider": { "@id": "{{BASE_URL}}/#org" }
             },
             {
                 "@type": "FAQPage",
