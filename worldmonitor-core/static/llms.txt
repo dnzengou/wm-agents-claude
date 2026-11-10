@@ -16,10 +16,12 @@ tier) and should not be mirrored.
 
 ## Product
 
-- [Landing page](/): map, country briefs, pricing, FAQ.
+- [Landing page](/): map, country briefs, pricing, FAQ (single-page app).
 - [Health check](/health): JSON liveness probe.
-- [Pricing (anchor)](/#pricing): Free / Pro / Enterprise tiers and features.
-- [FAQ (anchor)](/#faq): common questions, data sources, limits.
+- [Pricing](/pricing): Free / Pro / Enterprise tiers (Product + Offers JSON-LD).
+- [About](/about): mission, architecture, trust signals (AboutPage JSON-LD).
+- [FAQ](/faq): ~12 canonical Q&As with FAQPage JSON-LD.
+- [API docs](/docs/api): OpenAPI quickstart + ChatGPT Actions / Claude Agent worked examples (TechArticle JSON-LD).
 
 ## For LLMs & agents
 

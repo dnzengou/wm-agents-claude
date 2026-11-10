@@ -127,6 +127,10 @@ on an interactive 2D/3D world map alongside country-scoped briefs.
 | Path | Description |
 |------|-------------|
 | `/` | Interactive single-page app (landing + map + settings). |
+| `/pricing` | Static marketing page: Free / Pro / Enterprise tiers (Product + Offers JSON-LD). |
+| `/about` | Static page: mission, architecture, trust signals (AboutPage JSON-LD). |
+| `/faq` | Static page: ~12 canonical Q&As (FAQPage JSON-LD). |
+| `/docs/api` | Static page: OpenAPI quickstart + ChatGPT Actions / Claude Agent worked examples (TechArticle JSON-LD). |
 | `/health` | Liveness JSON (`{"status":"ok"}`). |
 | `/llms.txt` | Short AI/LLM index of this site. |
 | `/llms-full.txt` | This document. |

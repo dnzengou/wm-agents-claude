@@ -285,6 +285,36 @@ async fn serve_static(
             base,
             "application/json; charset=utf-8",
         ),
+        // ── Dedicated marketing + docs pages ─────────────────────────────
+        // Each is a standalone HTML page with its own meta + JSON-LD +
+        // BreadcrumbList. Crawlers index these as independent URLs, which
+        // is where the real commercial-SEO lift comes from.
+        "pricing" => tpl(
+            include_str!("../static/pricing.html"),
+            base,
+            "text/html; charset=utf-8",
+        ),
+        "about" => tpl(
+            include_str!("../static/about.html"),
+            base,
+            "text/html; charset=utf-8",
+        ),
+        "faq" => tpl(
+            include_str!("../static/faq.html"),
+            base,
+            "text/html; charset=utf-8",
+        ),
+        "docs/api" => tpl(
+            include_str!("../static/docs-api.html"),
+            base,
+            "text/html; charset=utf-8",
+        ),
+        // Shared stylesheet for the subpages (no templating — immutable).
+        "page.css" => (
+            [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
+            include_str!("../static/page.css"),
+        )
+            .into_response(),
         _ => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }

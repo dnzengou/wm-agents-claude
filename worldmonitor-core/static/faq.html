@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ — WorldMonitor Core · Real-Time Global Intelligence</title>
+    <meta name="description" content="Answers to the most asked questions about WorldMonitor Core: data sources, severity scoring, alert delivery, API access, self-hosting, AI-agent integration, privacy, licensing.">
+    <meta name="keywords" content="WorldMonitor FAQ, OSINT FAQ, GDELT API, geopolitical events, severity scoring, Slack alert, Telegram alert, self-host intelligence">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+    <meta name="color-scheme" content="dark light">
+    <meta name="theme-color" content="#0a0a0f">
+    <link rel="canonical" href="{{BASE_URL}}/faq">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="alternate" type="text/markdown" href="/llms-full.txt">
+    <link rel="stylesheet" href="/page.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="WorldMonitor Core">
+    <meta property="og:title" content="FAQ — WorldMonitor Core">
+    <meta property="og:description" content="Answers to the most asked questions about WorldMonitor Core.">
+    <meta property="og:url" content="{{BASE_URL}}/faq">
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "BreadcrumbList",
+                "itemListElement": [
+                    { "@type": "ListItem", "position": 1, "name": "Home", "item": "{{BASE_URL}}/" },
+                    { "@type": "ListItem", "position": 2, "name": "FAQ", "item": "{{BASE_URL}}/faq" }
+                ]
+            },
+            {
+                "@type": "FAQPage",
+                "mainEntity": [
+                    { "@type": "Question", "name": "What problem does WorldMonitor Core solve?", "acceptedAnswer": { "@type": "Answer", "text": "A real-time awareness feed — the kind a 24/7 ops center would run on a wall monitor — but affordable to self-host and small enough to embed in another product. One Rust binary, three open feeds, a sensible default severity model." } },
+                    { "@type": "Question", "name": "Where does the data come from?", "acceptedAnswer": { "@type": "Answer", "text": "Three open sources: GDELT 2.1 (global events, machine-coded), NASA EONET v3 (natural events), and a curated RSS set including Reuters, AP, ArsTechnica, KrebsOnSecurity, SpaceNews, Al Jazeera, RFI and BBC. Country briefs are summarized by a hosted LLM on Groq." } },
+                    { "@type": "Question", "name": "Is the LLM involved in severity scoring?", "acceptedAnswer": { "@type": "Answer", "text": "No. Severity is a deterministic function of feature detectors in the Rust core. The LLM is only used to compose the per-country natural-language brief when a user asks for one, which keeps scoring reproducible and auditable." } },
+                    { "@type": "Question", "name": "How are alerts delivered?", "acceptedAnswer": { "@type": "Answer", "text": "Each ingestion tick runs the new-event batch against every alert subscription. A match (country + severity threshold) enqueues a dispatch to the user's Slack webhook or Telegram bot, keyed by (user_id, event_id) so an overlapping re-fusion never notifies twice." } },
+                    { "@type": "Question", "name": "What tier do I need for API access?", "acceptedAnswer": { "@type": "Answer", "text": "Enterprise ($49/month). Keys are prefixed wm_, scoped to one account, hashed with PBKDF2 before storage, and revocable from the Settings UI. Send as Authorization: Bearer wm_… or X-API-Key: wm_…." } },
+                    { "@type": "Question", "name": "What AI agents and LLM crawlers are allowed?", "acceptedAnswer": { "@type": "Answer", "text": "All public AI and search crawlers are allowed. robots.txt enumerates GPTBot, OAI-SearchBot, ClaudeBot, PerplexityBot, Google-Extended, Googlebot, Bingbot, Applebot, CCBot, cohere-ai, Bytespider and others. Only /api/ paths are disallowed." } },
+                    { "@type": "Question", "name": "Can I wire this up to ChatGPT Actions or a Claude Agent?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The service publishes an OpenAPI 3.1 spec at /openapi.yaml and a ChatGPT plugin manifest at /.well-known/ai-plugin.json. Point your agent runner at either and it will self-configure. See /docs/api for a worked example." } },
+                    { "@type": "Question", "name": "Can I self-host it?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The Rust binary is the only moving part. SQLite is embedded; there is no external database or queue. A Dockerfile is in the repo root. Minimum requirements: one small VM or container with ~256 MB of RAM and outbound HTTPS." } },
+                    { "@type": "Question", "name": "How much history do I get?", "acceptedAnswer": { "@type": "Answer", "text": "Free: 7 days. Pro: 90 days with full-text search and CSV export. Enterprise: up to 365 days via the API." } },
+                    { "@type": "Question", "name": "How do I sign in on another device?", "acceptedAnswer": { "@type": "Answer", "text": "By default each browser is its own account (UUID in localStorage). To follow your account across devices, open Settings → Account Sync and link a handle + passphrase. Then sign in on the other browser with the same pair." } },
+                    { "@type": "Question", "name": "What's the licensing / privacy stance?", "acceptedAnswer": { "@type": "Answer", "text": "The service is proprietary; the engagement contract depends on tier. Source is at github.com/dnzengou/wm-agents-claude. We do not sell user data; per-browser identity is just a UUID; passphrases are stored as PBKDF2 hashes with per-record salt, never plaintext. Stripe handles billing — card numbers never touch our servers." } },
+                    { "@type": "Question", "name": "Where do I report a security issue?", "acceptedAnswer": { "@type": "Answer", "text": "See /.well-known/security.txt (RFC 9116). Coordinated disclosure via GitHub Security Advisories is preferred." } }
+                ]
+            }
+        ]
+    }
+    </script>
+</head>
+<body>
+    <nav>
+        <a href="/">⚡ Home</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/about">About</a>
+        <a href="/faq" class="active">FAQ</a>
+        <a href="/docs/api">API docs</a>
+    </nav>
+
+    <h1>Frequently Asked Questions</h1>
+    <p class="lead">Answers to the questions people most often ask about WorldMonitor Core. Short answers first, longer background in <a href="/llms-full.txt">llms-full.txt</a>.</p>
+
+    <h2>Product</h2>
+    <h3>What problem does WorldMonitor Core solve?</h3>
+    <p>A real-time awareness feed — the kind a 24/7 ops center would run on a wall monitor — but affordable to self-host and small enough to embed in another product. One Rust binary, three open feeds, a sensible default severity model.</p>
+
+    <h3>Where does the data come from?</h3>
+    <p>Three open sources: GDELT 2.1 (global events, machine-coded), NASA EONET v3 (natural events), and a curated RSS set including Reuters, AP, ArsTechnica, KrebsOnSecurity, SpaceNews, Al Jazeera, RFI and BBC. Country briefs are summarized by a hosted LLM on Groq.</p>
+
+    <h3>Is the LLM involved in severity scoring?</h3>
+    <p>No. Severity is a deterministic function of feature detectors in the Rust core. The LLM is only used to compose the per-country natural-language brief when a user asks for one, which keeps scoring reproducible and auditable.</p>
+
+    <h3>How are alerts delivered?</h3>
+    <p>Each ingestion tick runs the new-event batch against every alert subscription. A match (country + severity threshold) enqueues a dispatch to the user's Slack webhook or Telegram bot, keyed by <code>(user_id, event_id)</code> so an overlapping re-fusion never notifies twice.</p>
+
+    <h3>How much history do I get?</h3>
+    <p>Free: 7 days. Pro: 90 days with full-text search and CSV export. Enterprise: up to 365 days via the API.</p>
+
+    <h2>Access &amp; identity</h2>
+    <h3>What tier do I need for API access?</h3>
+    <p>Enterprise ($49/month). Keys are prefixed <code>wm_</code>, scoped to one account, hashed with PBKDF2 before storage, and revocable from the Settings UI. Send as <code>Authorization: Bearer wm_…</code> or <code>X-API-Key: wm_…</code>.</p>
+
+    <h3>How do I sign in on another device?</h3>
+    <p>By default each browser is its own account (UUID in localStorage). To follow your account across devices, open Settings → Account Sync and link a handle + passphrase. Then sign in on the other browser with the same pair.</p>
+
+    <h3>Can I self-host it?</h3>
+    <p>Yes. The Rust binary is the only moving part. SQLite is embedded; there is no external database or queue. A Dockerfile is in the repo root. Minimum requirements: one small VM or container with ~256 MB of RAM and outbound HTTPS.</p>
+
+    <h2>AI agents &amp; retrieval</h2>
+    <h3>What AI agents and LLM crawlers are allowed?</h3>
+    <p>All public AI and search crawlers are allowed. <a href="/robots.txt">robots.txt</a> enumerates GPTBot, OAI-SearchBot, ClaudeBot, PerplexityBot, Google-Extended, Googlebot, Bingbot, Applebot, CCBot, cohere-ai, Bytespider and others. Only <code>/api/</code> paths are disallowed.</p>
+
+    <h3>Can I wire this up to ChatGPT Actions or a Claude Agent?</h3>
+    <p>Yes. The service publishes an <a href="/openapi.yaml">OpenAPI 3.1 spec</a> and a <a href="/.well-known/ai-plugin.json">ChatGPT plugin manifest</a>. Point your agent runner at either and it will self-configure. See <a href="/docs/api">the API docs</a> for a worked example.</p>
+
+    <h2>Trust</h2>
+    <h3>What's the licensing / privacy stance?</h3>
+    <p>The service is proprietary; the engagement contract depends on tier. Source is at <a href="https://github.com/dnzengou/wm-agents-claude">github.com/dnzengou/wm-agents-claude</a>. We do not sell user data; per-browser identity is just a UUID; passphrases are stored as PBKDF2 hashes with per-record salt, never plaintext. Stripe handles billing — card numbers never touch our servers.</p>
+
+    <h3>Where do I report a security issue?</h3>
+    <p>See <a href="/.well-known/security.txt">/.well-known/security.txt</a> (RFC 9116). Coordinated disclosure via GitHub Security Advisories is preferred.</p>
+
+    <footer>
+        <a href="/">⚡ Home</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/about">About</a>
+        <a href="/faq">FAQ</a>
+        <a href="/docs/api">API docs</a>
+        <a href="/llms.txt">llms.txt</a>
+        <a href="/.well-known/security.txt">security.txt</a>
+        <a href="https://github.com/dnzengou/wm-agents-claude">GitHub</a>
+    </footer>
+</body>
+</html>

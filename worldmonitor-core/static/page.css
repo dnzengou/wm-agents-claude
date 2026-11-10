@@ -1,0 +1,103 @@
+/* Shared dark-theme stylesheet for WorldMonitor marketing + docs pages
+   (/pricing, /about, /faq, /docs/api). The SPA at / has its own inline
+   styles in index.html — this file is for the static content pages. */
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+:root{
+    --bg:#0a0a0f; --bg-2:#0f172a;
+    --card:#1e293b; --border:#334155;
+    --fg:#f8fafc; --fg-2:#cbd5e1; --muted:#94a3b8;
+    --blue:#60a5fa; --blue-2:#3b82f6;
+    --green:#10b981; --orange:#f59e0b; --red:#ef4444;
+}
+
+@media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+        --bg:#ffffff; --bg-2:#f8fafc;
+        --card:#f1f5f9; --border:#cbd5e1;
+        --fg:#0f172a; --fg-2:#334155; --muted:#64748b;
+        --blue:#2563eb; --blue-2:#1d4ed8;
+    }
+}
+
+body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--bg); color:var(--fg);
+    line-height:1.6;
+    padding:2rem 1rem;
+    max-width:900px;
+    margin:0 auto;
+    -webkit-font-smoothing:antialiased;
+}
+
+nav{
+    display:flex; gap:1rem; flex-wrap:wrap;
+    font-size:0.9rem;
+    margin-bottom:2rem; padding-bottom:1rem;
+    border-bottom:1px solid var(--border);
+}
+nav a{ color:var(--muted); text-decoration:none; }
+nav a:hover, nav a.active{ color:var(--blue); }
+
+h1{ color:var(--blue); font-size:2rem; margin-bottom:0.5rem; }
+h2{ color:var(--fg); font-size:1.3rem; margin:2rem 0 0.75rem; border-bottom:1px solid var(--border); padding-bottom:0.4rem; }
+h3{ color:var(--blue); font-size:1.05rem; margin:1.25rem 0 0.3rem; }
+p{ color:var(--fg-2); margin-bottom:1rem; }
+.lead{ color:var(--muted); font-size:1.05rem; margin-bottom:2rem; }
+
+code, pre{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:0.85rem;
+}
+code{
+    background:var(--card); border:1px solid var(--border);
+    padding:0.1rem 0.35rem; border-radius:0.3rem;
+    color:var(--blue);
+}
+pre{
+    background:var(--card); border:1px solid var(--border);
+    padding:1rem; border-radius:0.5rem;
+    overflow-x:auto; margin:0.75rem 0 1rem;
+    color:var(--fg);
+}
+pre code{ background:transparent; border:none; padding:0; color:inherit; }
+
+a{ color:var(--blue); text-decoration:underline; text-underline-offset:2px; }
+a:hover{ color:var(--blue-2); }
+
+ul, ol{ margin:0.5rem 0 1rem 1.5rem; }
+ul li, ol li{ color:var(--fg-2); margin-bottom:0.3rem; }
+
+/* Pricing tiers */
+.tiers{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; margin:1.5rem 0; }
+.tier{ background:var(--card); border:1px solid var(--border); border-radius:0.75rem; padding:1.5rem; }
+.tier.featured{ border-color:var(--orange); box-shadow:0 0 0 1px var(--orange); }
+.tier h3{ color:var(--blue); margin:0 0 0.5rem; font-size:1.15rem; }
+.tier .price{ font-size:2rem; font-weight:700; color:var(--fg); }
+.tier .price span{ font-size:0.9rem; color:var(--muted); font-weight:400; }
+.tier ul{ list-style:none; margin:1rem 0 0; }
+.tier ul li{ color:var(--fg-2); padding:0.3rem 0; font-size:0.9rem; border-bottom:1px solid rgba(51,65,85,0.5); }
+.tier ul li:before{ content:"✓ "; color:var(--green); }
+.tier .cta{ display:block; text-align:center; background:var(--blue-2); color:#fff; padding:0.7rem; border-radius:0.5rem; text-decoration:none; font-weight:600; margin-top:1rem; }
+.tier.free .cta{ background:transparent; border:1px solid var(--border); color:var(--fg); }
+
+/* Info chips */
+.chips{ display:flex; gap:0.5rem; flex-wrap:wrap; margin:0.5rem 0 1.5rem; }
+.chip{
+    font-size:0.75rem;
+    padding:0.25rem 0.6rem;
+    border-radius:9999px;
+    border:1px solid var(--border);
+    color:var(--muted);
+    background:var(--card);
+}
+
+footer{
+    margin-top:3rem; padding-top:1.5rem;
+    border-top:1px solid var(--border);
+    color:var(--muted); font-size:0.8rem;
+    display:flex; gap:1rem; flex-wrap:wrap;
+}
+footer a{ color:var(--muted); text-decoration:none; }
+footer a:hover{ color:var(--blue); }
