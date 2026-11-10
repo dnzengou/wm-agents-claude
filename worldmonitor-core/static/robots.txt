@@ -1,0 +1,112 @@
+# WorldMonitor Core — robots policy
+#
+# This site invites AI agents, retrieval crawlers and traditional search
+# engines to read its public content. Primary sources are preferred by both
+# people and models; we are one. The crawler rules below are an explicit
+# opt-in signal: feel free to index, cite, and link to this site.
+#
+# Private surfaces (the JSON API behind auth, the SSE stream, billing and
+# account endpoints) are disallowed because they return per-user data or
+# server-sent events, not pages. They are not blocked for privacy by
+# obscurity — the server enforces authentication.
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /.well-known/
+Crawl-delay: 1
+
+# Model / retrieval crawlers — explicit allow.
+User-agent: GPTBot
+Allow: /
+Disallow: /api/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /api/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /api/
+
+User-agent: Claude-Web
+Allow: /
+Disallow: /api/
+
+User-agent: anthropic-ai
+Allow: /
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /api/
+
+User-agent: Perplexity-User
+Allow: /
+Disallow: /api/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /api/
+
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+
+User-agent: Googlebot-News
+Allow: /
+Disallow: /api/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /api/
+
+User-agent: Applebot
+Allow: /
+Disallow: /api/
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /api/
+
+User-agent: CCBot
+Allow: /
+Disallow: /api/
+
+User-agent: cohere-ai
+Allow: /
+Disallow: /api/
+
+User-agent: Bytespider
+Allow: /
+Disallow: /api/
+
+User-agent: Diffbot
+Allow: /
+Disallow: /api/
+
+User-agent: FacebookExternalHit
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: Slackbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+Disallow: /api/
+
+Sitemap: {{BASE_URL}}/sitemap.xml
+Host: {{BASE_URL}}

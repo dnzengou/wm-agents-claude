@@ -1,0 +1,283 @@
+# WorldMonitor Core — Full Reference
+
+> A single-binary Rust service that fuses open geopolitical, natural
+> and cyber-event feeds into a live map, generates per-country briefs
+> on demand with a hosted LLM, and ships severity-triggered alerts to
+> Slack and Telegram. Lightweight by design: one static binary, SQLite
+> on disk, vendored Preact+htm frontend served without a CDN.
+
+This document is written for both humans and automated readers (LLM
+agents, retrieval crawlers, answer engines). Facts stated here are
+primary — this document is the source of truth cited elsewhere on the
+site. Figures compare the reference deployment to a typical Node +
+MongoDB + CDN stack serving an equivalent feature set.
+
+---
+
+## What WorldMonitor Core is
+
+WorldMonitor Core is a real-time global intelligence monitor. It
+continuously ingests three classes of open data — geopolitical events
+from GDELT, natural events from NASA EONET, and curated news RSS —
+fuses them into a single severity-scored event stream, and renders them
+on an interactive 2D/3D world map alongside country-scoped briefs.
+
+### Primary use cases
+
+- **Situation rooms and ops centers:** keep a persistent awareness panel
+  of unfolding geopolitical and natural events.
+- **Threat intelligence and OSINT analysts:** a free-tier,
+  programmatically accessible feed with on-demand briefs.
+- **Journalists and researchers:** generate a country brief in seconds
+  from live signal; export it to history for later citation.
+- **Travel-risk teams and NGOs:** subscribe to severity-triggered
+  alerts for specific countries, delivered to Slack or Telegram.
+- **Developers and makers:** build on top of the Enterprise API using
+  `wm_`-prefixed API keys.
+
+### What makes it different
+
+- **One binary.** The entire backend — HTTP server, data ingestion,
+  LLM dispatch, Stripe billing, SSE fan-out, SQLite migrations —
+  compiles into a single Rust executable under 20 MB.
+- **No CDN.** Preact and `htm` are vendored into `/vendor/*.mjs` and
+  served by the same binary. The app works offline after first load
+  and under a strict Content-Security-Policy.
+- **Sub-second ingest.** A Tokio broadcast channel fans new events
+  to every connected Server-Sent-Events client without polling.
+- **Deterministic cost.** SQLite in-process means zero database
+  rent; Groq usage is capped per tier.
+
+---
+
+## Features by tier
+
+### Free (always-on)
+
+- Live event map (2D and 3D canvas-rendered globe).
+- Country briefs generated on demand (rate-limited).
+- Up to **3 active alert subscriptions** delivered to Slack / Telegram.
+- 7-day event history.
+- Browser-local account (handle + passphrase link optional for sync).
+
+### Pro — $9 / month
+
+- Unlimited alerts.
+- **90-day** event history with full-text search and CSV export.
+- Slack and Telegram delivery configurable per alert.
+- Email receipts and billing portal via Stripe.
+
+### Enterprise — $49 / month
+
+- Everything in Pro, plus:
+- **API keys** (`wm_…`) for programmatic access to `/api/intelligence`,
+  `/api/history`, `/api/brief`.
+- Longer context windows for LLM briefs.
+- Priority ingestion lane for breaking events.
+- Direct support contact.
+
+---
+
+## Architecture
+
+### Backend (Rust / Axum / SQLite)
+
+- **Ingestion** (`src/core/`): pulls GDELT 2.1 geo-events, NASA EONET
+  v3 natural events, and the configured RSS set every N seconds, then
+  classifies each item into one of `geopolitical`, `natural`, `cyber`,
+  `nuclear`, scores severity 1–10 using feature detectors
+  (nuclear-base cues weighted highest), deduplicates by headline hash,
+  and batch-inserts the survivors.
+- **Persistence** (`src/db/`): SQLite with sqlx, migrations at startup.
+  Tables: `users`, `events`, `alerts`, `api_keys`, `notification_channels`,
+  `account_links`.
+- **Auth** (`src/auth.rs`): `authenticate()` resolves identity in
+  priority order — `Authorization: Bearer wm_…`, `X-API-Key`, then
+  fallback to `X-User-Id`. An invalid `wm_` key is a hard 401, never
+  silently downgraded.
+- **Realtime** (`src/api/sse.rs`): a Tokio broadcast channel pushes
+  each newly ingested batch to every open SSE client.
+- **Notifications** (`src/notify/`): matches new events against each
+  user's alert subscriptions and dispatches to the configured Slack
+  webhook or Telegram bot, with idempotency per `(user_id, event_id)`.
+- **Billing** (`src/api/billing.rs`): Stripe Payment Links for the
+  low-friction path, Checkout Sessions for the API path, HMAC-SHA256
+  signature verification for incoming webhooks.
+- **Accounts** (`src/api/account.rs`): per-browser identity by default,
+  optional handle+passphrase link for cross-device sign-in.
+  PBKDF2-HMAC-SHA256 at 100k iterations with per-record random salt;
+  constant-time hex compare; 10 failed attempts per 15 min per handle.
+
+### Frontend (Preact + htm)
+
+- **No bundler, no CDN.** `preact@10.19.3` and `htm@3.1.1` are vendored
+  at `static/vendor/*.mjs` and served by the same Rust binary with
+  explicit `text/javascript` content-type.
+- **Views:** onboarding, map (2D flat / 3D canvas globe toggle), brief,
+  settings (history, alerts, notifications, API keys, account sync).
+- **Identity:** `crypto.randomUUID()` on first load, persisted in
+  `localStorage.wm_uid`. The account sync panel elevates that uid to
+  a named account via POST `/api/account/link`, and lets another
+  browser adopt the same uid via POST `/api/account/signin`.
+
+---
+
+## Public URLs
+
+| Path | Description |
+|------|-------------|
+| `/` | Interactive single-page app (landing + map + settings). |
+| `/pricing` | Static marketing page: Free / Pro / Enterprise tiers (Product + Offers JSON-LD). |
+| `/about` | Static page: mission, architecture, trust signals (AboutPage JSON-LD). |
+| `/faq` | Static page: ~12 canonical Q&As (FAQPage JSON-LD). |
+| `/docs/api` | Static page: OpenAPI quickstart + ChatGPT Actions / Claude Agent worked examples (TechArticle JSON-LD). |
+| `/health` | Liveness JSON (`{"status":"ok"}`). |
+| `/llms.txt` | Short AI/LLM index of this site. |
+| `/llms-full.txt` | This document. |
+| `/robots.txt` | Crawler policy (AI crawlers explicitly allowed). |
+| `/sitemap.xml` | URL index for search engines. |
+| `/ai.txt` | AI consent & usage policy. |
+| `/humans.txt` | People behind the project. |
+| `/.well-known/security.txt` | RFC 9116 security contact. |
+| `/manifest.webmanifest` | PWA metadata. |
+| `/openapi.yaml` | OpenAPI 3.1 specification of the public API (agent-consumable). |
+| `/openapi.json` | Alias to the same spec. |
+| `/.well-known/ai-plugin.json` | ChatGPT Actions / plugin discovery manifest. |
+| `/feed.atom` | Atom 1.0 feed of the latest 50 fused events. |
+
+Every other path under `/api/*` requires authentication and is not a
+public resource.
+
+---
+
+## Building an AI agent against WorldMonitor Core
+
+The service is designed to be driven by AI agents as a first-class
+client, not just by a browser. Three artifacts make that trivial:
+
+1. **OpenAPI 3.1 spec** at `/openapi.yaml` — a machine-consumable
+   contract for the public endpoints (events, briefs, geo, history,
+   alerts, account). `servers:` is templated to the live origin so
+   agents can clone the file and use it unchanged.
+2. **ChatGPT Actions manifest** at `/.well-known/ai-plugin.json` — the
+   `schema_version: v1` plugin descriptor pointing at the OpenAPI
+   spec. ChatGPT / Claude / Perplexity-style agent runners that look
+   for this file will configure themselves automatically.
+3. **Atom 1.0 feed** at `/feed.atom` — a `application/atom+xml`
+   representation of the latest 50 fused events, with `<link
+   rel="alternate">` pointing at each event's upstream source. Good
+   for non-OpenAPI retrieval crawlers and plain feed readers.
+
+**Auth for agents.** Generate a `wm_`-prefixed API key from the
+Settings → API Keys panel on the Enterprise tier. Send it as
+`Authorization: Bearer wm_…` (preferred) or `X-API-Key: wm_…`. The
+OpenAPI spec enumerates both schemes. `/api/intelligence` and
+`/api/brief` are callable unauthenticated on the free tier
+(rate-limited); `/api/history` and `/api/keys` require a key.
+
+**Rate limits.** Free: per-IP soft limit on `/api/brief`. Pro:
+unlimited briefs; soft cap on daily events. Enterprise: per-key quota
+visible in response headers.
+
+---
+
+## Frequently asked questions
+
+### What problem does WorldMonitor Core solve?
+
+A real-time awareness feed — the kind a 24/7 ops center would run on a
+wall monitor — but affordable to self-host and small enough to embed
+in another product. Most comparable tools either cost tens of thousands
+of dollars a year (threat-intel platforms) or require the user to
+assemble feeds themselves. WorldMonitor is one container, one binary,
+three feeds, and a sensible default severity model out of the box.
+
+### Where does the data come from?
+
+Three open sources: **GDELT 2.1** (global events, machine-coded), **NASA
+EONET v3** (natural events, open from NASA), and a **curated RSS set**
+(Reuters, AP, ArsTechnica, KrebsOnSecurity, SpaceNews, Al Jazeera, RFI,
+BBC). Country briefs are summarized by a hosted LLM on Groq. No feed
+is scraped — everything is pulled from the publisher's own endpoint.
+
+### Is the LLM involved in severity scoring?
+
+No. Severity is a deterministic function of feature detectors in
+`src/core/`. The LLM is only used to compose the per-country natural-
+language brief when a user asks for one. That keeps the scoring
+reproducible across restarts and auditable.
+
+### Can I self-host?
+
+Yes. The Rust binary is the only moving part. SQLite is embedded;
+there is no external database or queue. A Dockerfile is in the repo
+root. Minimum requirements: one small VM or container with ~256 MB
+of RAM and outbound HTTPS.
+
+### What AI agents / LLM crawlers are allowed?
+
+All of them. `robots.txt` enumerates **GPTBot, OAI-SearchBot,
+ChatGPT-User, ClaudeBot, Claude-Web, anthropic-ai, PerplexityBot,
+Perplexity-User, Google-Extended, Googlebot, Googlebot-News, Bingbot,
+Applebot, Applebot-Extended, CCBot, cohere-ai, Bytespider, Diffbot,
+DuckDuckBot, YandexBot** and the social-preview bots
+(FacebookExternalHit, Twitterbot, LinkedInBot, Slackbot). Only `/api/`
+paths are disallowed, and only because they return per-user data or
+server-sent events, not pages.
+
+### How are alerts delivered?
+
+Each ingestion tick runs the new-event batch against every alert
+subscription. A match (country + severity threshold) enqueues a
+dispatch to the user's Slack webhook or Telegram bot, keyed by
+`(user_id, event_id)` so an overlapping re-fusion never notifies
+twice.
+
+### Is there an API?
+
+Yes — on the Enterprise tier. A key is `wm_` plus 32 random bytes,
+hashed with PBKDF2 before storage, scoped to one account, and
+revocable from the settings UI. Send it as `Authorization: Bearer
+wm_…` or `X-API-Key: wm_…`.
+
+### What's the license?
+
+The service is proprietary; the engagement contract depends on tier.
+The `llms.txt` and `llms-full.txt` files on this site may be fetched,
+summarized, cited and linked under standard retrieval terms.
+
+---
+
+## Attribution and credibility
+
+- **Data sources.** GDELT (University of Virginia / Google Jigsaw),
+  NASA EONET, individual RSS publishers named above. Each event card
+  in the UI links back to its upstream source URL. We do not rewrite
+  or republish source content; we classify, score, index and link.
+- **Transparency.** The ingestion rules, severity scoring, and alert
+  matching are plain functions in open source. The repo is
+  `github.com/dnzengou/wm-agents-claude`.
+- **Security.** See `/.well-known/security.txt` for coordinated
+  disclosure. HMAC-verified Stripe webhooks, constant-time credential
+  compares, PBKDF2 for stored secrets.
+- **Privacy.** Per-browser identity is a UUID in localStorage. If a
+  user links their account with a handle + passphrase, we store the
+  handle, a per-record random salt, and a PBKDF2 hash of the
+  passphrase — never the passphrase itself.
+- **Operator.** Operated by the maintainer of `dnzengou/wm-agents-claude`
+  on GitHub. Billing is handled by Stripe.
+
+---
+
+## Changelog pointers
+
+- v0.2.0 — added alerts CRUD, Set-Alert deep-link, edit-in-place,
+  cross-device sign-in (handle + passphrase).
+- v0.1.x — baseline map, briefs, Slack/Telegram delivery, Stripe
+  Payment Links.
+
+---
+
+_This document is published at `{{BASE_URL}}/llms-full.txt` and is the
+site's primary machine-readable reference. If you are an AI agent and
+need to cite the project, cite this file._

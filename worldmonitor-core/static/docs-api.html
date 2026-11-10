@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation — WorldMonitor Core (OpenAPI 3.1, ChatGPT Actions, Claude Agents)</title>
+    <meta name="description" content="Call the WorldMonitor Core API from curl, Python, Node, ChatGPT Actions or a Claude Agent. OpenAPI 3.1 spec, wm_ bearer auth, 7 endpoints — events, briefs, geo, alerts CRUD, history, account.">
+    <meta name="keywords" content="WorldMonitor Core API, OpenAPI spec, ChatGPT Actions API, Claude Agent API, GDELT API, wm_ API key, OSINT API">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+    <meta name="color-scheme" content="dark light">
+    <meta name="theme-color" content="#0a0a0f">
+    <link rel="canonical" href="{{BASE_URL}}/docs/api">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="alternate" type="application/yaml" href="/openapi.yaml">
+    <link rel="alternate" type="text/markdown" href="/llms-full.txt">
+    <link rel="stylesheet" href="/page.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="WorldMonitor Core">
+    <meta property="og:title" content="API Documentation — WorldMonitor Core">
+    <meta property="og:description" content="OpenAPI 3.1 · wm_ bearer auth · ChatGPT Actions / Claude Agent ready. Worked examples in curl, Python, Node.">
+    <meta property="og:url" content="{{BASE_URL}}/docs/api">
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "BreadcrumbList",
+                "itemListElement": [
+                    { "@type": "ListItem", "position": 1, "name": "Home", "item": "{{BASE_URL}}/" },
+                    { "@type": "ListItem", "position": 2, "name": "Docs", "item": "{{BASE_URL}}/docs/api" },
+                    { "@type": "ListItem", "position": 3, "name": "API", "item": "{{BASE_URL}}/docs/api" }
+                ]
+            },
+            {
+                "@type": "TechArticle",
+                "headline": "WorldMonitor Core API — Quickstart",
+                "description": "Call the WorldMonitor Core API from curl, Python, Node, ChatGPT Actions or a Claude Agent.",
+                "url": "{{BASE_URL}}/docs/api",
+                "inLanguage": "en",
+                "about": { "@type": "WebAPI", "name": "WorldMonitor Core API", "documentation": "{{BASE_URL}}/openapi.yaml" },
+                "proficiencyLevel": "Beginner",
+                "dependencies": "HTTPS client; optional wm_ API key for Enterprise endpoints"
+            }
+        ]
+    }
+    </script>
+</head>
+<body>
+    <nav>
+        <a href="/">⚡ Home</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/about">About</a>
+        <a href="/faq">FAQ</a>
+        <a href="/docs/api" class="active">API docs</a>
+    </nav>
+
+    <h1>API Documentation</h1>
+    <p class="lead">Seven endpoints behind one Rust binary. Everything a sales demo or an agent integration needs: list events, generate a country brief, subscribe to alerts, pull history.</p>
+
+    <div class="chips">
+        <span class="chip">OpenAPI 3.1</span>
+        <span class="chip">Bearer <code>wm_…</code></span>
+        <span class="chip">JSON over HTTPS</span>
+        <span class="chip">SSE stream · Atom feed</span>
+        <span class="chip">ChatGPT Actions ready</span>
+        <span class="chip">Claude Agent ready</span>
+    </div>
+
+    <h2>Specification</h2>
+    <ul>
+        <li><a href="/openapi.yaml">/openapi.yaml</a> — the authoritative OpenAPI 3.1 contract (<code>servers:</code> templated to this origin).</li>
+        <li><a href="/.well-known/ai-plugin.json">/.well-known/ai-plugin.json</a> — ChatGPT Actions plugin manifest.</li>
+        <li><a href="/llms-full.txt">/llms-full.txt</a> — agent-friendly Markdown reference.</li>
+    </ul>
+
+    <h2>Authentication</h2>
+    <p>Generate a key from <strong>Settings → API Keys</strong> on the Enterprise tier. Keys start with <code>wm_</code> and are shown once at issuance.</p>
+    <pre><code># Both schemes are accepted — pick one.
+curl -H "Authorization: Bearer wm_abc123…" https://your-host/api/history
+curl -H "X-API-Key: wm_abc123…"             https://your-host/api/history</code></pre>
+    <p>An invalid or revoked key returns <code>401</code> — never silently downgraded.</p>
+
+    <h2>Quickstart: list events</h2>
+    <h3>curl</h3>
+    <pre><code>curl -s https://your-host/api/intelligence | jq '.[] | select(.severity >= 7)'</code></pre>
+
+    <h3>Python</h3>
+    <pre><code>import requests
+r = requests.get("https://your-host/api/intelligence",
+                 headers={"Authorization": "Bearer wm_abc123…"})
+for ev in r.json():
+    if ev["severity"] >= 7:
+        print(ev["country"], ev["headline"])</code></pre>
+
+    <h3>Node (fetch)</h3>
+    <pre><code>const res = await fetch("https://your-host/api/intelligence", {
+    headers: { Authorization: "Bearer wm_abc123…" }
+});
+const events = await res.json();
+events.filter(e => e.severity >= 7).forEach(e =>
+    console.log(e.country, e.headline));</code></pre>
+
+    <h2>Generate a country brief</h2>
+    <pre><code>curl -s https://your-host/api/brief \
+  -H "Content-Type: application/json" \
+  -d '{"country":"Ukraine","interests":["energy","cyber"]}'
+# → { "country": "Ukraine", "summary": "..." }</code></pre>
+
+    <h2>Subscribe to alerts</h2>
+    <pre><code># Alert on Ukraine events at severity ≥ 5
+curl -s https://your-host/api/alerts \
+  -H "Authorization: Bearer wm_abc123…" \
+  -H "Content-Type: application/json" \
+  -d '{"country":"Ukraine","threshold":5}'</code></pre>
+    <p>Matching events are dispatched to the Slack webhook / Telegram bot configured in <strong>Settings → Notifications</strong>, de-duplicated per <code>(user_id, event_id)</code>.</p>
+
+    <h2>Real-time streaming</h2>
+    <p>Use the Server-Sent-Events endpoint <code>GET /api/stream</code> for sub-second delivery of new fused batches, or the <a href="/feed.atom">Atom feed</a> for a pull-based <code>application/atom+xml</code> representation of the latest 50 events.</p>
+
+    <h2>Wire up a ChatGPT Action</h2>
+    <ol>
+        <li>In ChatGPT, open <strong>Explore GPTs → Create</strong> and add an Action.</li>
+        <li>Paste the URL of the OpenAPI spec: <code>https://your-host/openapi.yaml</code></li>
+        <li>Choose <strong>API Key / Bearer</strong> auth and paste your <code>wm_</code> key.</li>
+        <li>Save. ChatGPT now lists every operation (<code>listIntelligenceEvents</code>, <code>generateCountryBrief</code>, <code>createAlert</code>, <code>listAlerts</code>, <code>getEventHistory</code>, …) as callable tools.</li>
+    </ol>
+
+    <h2>Wire up a Claude Agent</h2>
+    <ol>
+        <li>Fetch <code>https://your-host/openapi.yaml</code> and generate tools (e.g. with <code>anthropic</code>'s <code>tool_runner</code> or a lightweight OpenAPI → tools adapter).</li>
+        <li>Store the <code>wm_</code> key in your agent's secret store; send it on every call as <code>Authorization: Bearer wm_…</code>.</li>
+        <li>Give the agent a system prompt pointing at <a href="/llms-full.txt">llms-full.txt</a> so it knows what the service is best used for.</li>
+    </ol>
+
+    <h2>Rate limits</h2>
+    <ul>
+        <li><strong>Free</strong>: per-IP soft limit on <code>POST /api/brief</code>.</li>
+        <li><strong>Pro</strong>: unlimited briefs, soft cap on daily event fetches.</li>
+        <li><strong>Enterprise</strong>: per-key quota (visible in response headers in a future release).</li>
+    </ul>
+
+    <h2>Error model</h2>
+    <pre><code>{ "error": "Invalid or revoked API key" }   // 401
+{ "error": "Rate limit exceeded" }          // 429
+{ "error": "That handle is taken …" }       // 409</code></pre>
+    <p>Every error response is a <code>{ "error": string }</code> JSON object; HTTP status carries the category.</p>
+
+    <footer>
+        <a href="/">⚡ Home</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/about">About</a>
+        <a href="/faq">FAQ</a>
+        <a href="/docs/api">API docs</a>
+        <a href="/openapi.yaml">OpenAPI</a>
+        <a href="/llms.txt">llms.txt</a>
+        <a href="/.well-known/security.txt">security.txt</a>
+        <a href="https://github.com/dnzengou/wm-agents-claude">GitHub</a>
+    </footer>
+</body>
+</html>

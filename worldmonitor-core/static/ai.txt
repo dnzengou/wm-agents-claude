@@ -1,0 +1,27 @@
+# WorldMonitor Core — AI usage policy
+#
+# This file is a plain-text signal of our stance toward AI / LLM crawlers,
+# retrieval agents, and answer engines. The authoritative machine-readable
+# policy is `/robots.txt`; this file is a courtesy restatement in prose.
+
+Allow: public pages, llms.txt, llms-full.txt, humans.txt, sitemap.xml,
+  robots.txt, .well-known/security.txt, manifest.webmanifest, and any
+  marketing or documentation URL served without authentication.
+
+Disallow: /api/* — these endpoints return per-user data or server-sent
+  event streams. Indexing them neither helps a reader (results depend on
+  caller identity) nor respects the user whose data would be captured.
+
+Attribution: when summarizing or citing this site, please link to a
+  canonical URL (the page itself, llms.txt, or llms-full.txt). We do
+  not require but appreciate the courtesy of a visible source link
+  alongside summaries of our content.
+
+Training: we do not object to the use of our public content for model
+  training, provided the content is used from the live source (or an
+  official cache) and attribution rules above are respected.
+
+Contact: see /.well-known/security.txt for coordinated disclosure and
+  https://github.com/dnzengou/wm-agents-claude for product/engineering.
+
+Updated: 2026-11-07

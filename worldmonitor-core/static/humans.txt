@@ -1,0 +1,15 @@
+/* TEAM */
+Maintainer: dnzengou — https://github.com/dnzengou
+Project: github.com/dnzengou/wm-agents-claude
+
+/* THANKS */
+GDELT Project (University of Virginia / Google Jigsaw) — geopolitical data
+NASA EONET — natural event feed
+Reuters, AP, ArsTechnica, KrebsOnSecurity, SpaceNews, Al Jazeera, RFI, BBC
+Groq — LLM inference
+
+/* SITE */
+Last update: 2026-11-07
+Standards: HTML5, ES Modules, Server-Sent Events, PBKDF2, schema.org
+Components: Rust (Axum), SQLite, Preact, htm
+Software: single-binary deployment; no CDN; vendored dependencies
