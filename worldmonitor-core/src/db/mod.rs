@@ -5,7 +5,7 @@ use sqlx::{
 use std::str::FromStr;
 use tracing::info;
 
-use crate::models::{Alert, ApiKey, IntelEvent, NotificationChannels, User};
+use crate::models::{AccountLink, Alert, ApiKey, IntelEvent, NotificationChannels, User};
 
 /// Database wrapper for SQLite/D1 operations
 #[derive(Clone)]
@@ -208,6 +208,28 @@ impl Database {
         )
         .execute(&self.pool)
         .await?;
+
+        // Cross-device sign-in: a handle + passphrase names an account so it can
+        // be adopted on another device. Only a PBKDF2-HMAC-SHA256 hash of the
+        // passphrase (with a per-row salt) is stored — never the passphrase.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS account_links (
+                handle TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                iterations INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_account_links_user ON account_links(user_id)")
+            .execute(&self.pool)
+            .await?;
 
         info!("Database migrations completed successfully");
         Ok(())
@@ -420,9 +442,13 @@ impl Database {
             Some(u) => Ok(u),
             None => {
                 let new_user = User::new(user_id);
+                // INSERT OR IGNORE so two requests racing to create the same
+                // brand-new user (the app fires several concurrent calls on
+                // first load) don't collide on the UNIQUE id — the loser's
+                // insert is a no-op instead of a 1555 error.
                 sqlx::query(
                     r#"
-                    INSERT INTO users (id, interests, countries, alert_threshold, streak, last_visit, created_at, tier, stripe_customer_id)
+                    INSERT OR IGNORE INTO users (id, interests, countries, alert_threshold, streak, last_visit, created_at, tier, stripe_customer_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     "#,
                 )
@@ -437,7 +463,20 @@ impl Database {
                 .bind(&new_user.stripe_customer_id)
                 .execute(&self.pool)
                 .await?;
-                Ok(new_user)
+
+                // Re-fetch so we return whichever row now exists (ours, or the
+                // one a concurrent request inserted first).
+                let created: Option<User> = sqlx::query_as(
+                    r#"
+                    SELECT id, interests, countries, alert_threshold, streak, last_visit, created_at, tier, stripe_customer_id
+                    FROM users WHERE id = ?
+                    "#,
+                )
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await?;
+
+                Ok(created.unwrap_or(new_user))
             }
         }
     }
@@ -543,6 +582,10 @@ impl Database {
         country: &str,
         threshold: i32,
     ) -> anyhow::Result<()> {
+        // Ensure the owning user row exists so the FK holds even when an alert
+        // is created before any profile write (e.g. via an API key).
+        self.get_or_create_user(user_id).await?;
+
         sqlx::query(
             r#"
             INSERT INTO alerts (user_id, country, threshold)
@@ -600,6 +643,36 @@ impl Database {
         .await?;
 
         Ok(alerts)
+    }
+
+    /// Delete an alert the caller owns. Returns `true` if a row was removed —
+    /// scoping by `user_id` stops one user deleting another's subscription.
+    pub async fn delete_alert(&self, user_id: &str, id: i64) -> anyhow::Result<bool> {
+        let result = sqlx::query("DELETE FROM alerts WHERE id = ? AND user_id = ?")
+            .bind(id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Update the severity threshold of an alert the caller owns. Returns
+    /// `true` if a row was changed; owner-scoped like `delete_alert`.
+    pub async fn update_alert_threshold(
+        &self,
+        user_id: &str,
+        id: i64,
+        threshold: i32,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query("UPDATE alerts SET threshold = ? WHERE id = ? AND user_id = ?")
+            .bind(threshold)
+            .bind(id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(result.rows_affected() > 0)
     }
 
     /// Idempotency guard for delivery: record that `event_id` has been pushed to
@@ -752,6 +825,60 @@ impl Database {
         .await?;
 
         Ok(())
+    }
+
+    // ==================== Account Link Operations ====================
+
+    /// Fetch the account-link record for a handle (for sign-in verification).
+    pub async fn get_account_link(&self, handle: &str) -> anyhow::Result<Option<AccountLink>> {
+        let link = sqlx::query_as::<_, AccountLink>(
+            "SELECT handle, user_id, salt, hash, iterations FROM account_links WHERE handle = ?",
+        )
+        .bind(handle)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(link)
+    }
+
+    /// The handle a user's account is named by, if any (for status display).
+    pub async fn get_link_for_user(&self, user_id: &str) -> anyhow::Result<Option<String>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT handle FROM account_links WHERE user_id = ? LIMIT 1")
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(h,)| h))
+    }
+
+    /// Name an account with a handle + passphrase hash. Fails with `false` when
+    /// the handle is already taken (the caller must sign in instead). The owning
+    /// user row is ensured so the FK holds.
+    pub async fn create_account_link(
+        &self,
+        handle: &str,
+        user_id: &str,
+        salt: &str,
+        hash: &str,
+        iterations: i64,
+    ) -> anyhow::Result<bool> {
+        self.get_or_create_user(user_id).await?;
+
+        let result = sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO account_links (handle, user_id, salt, hash, iterations)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(handle)
+        .bind(user_id)
+        .bind(salt)
+        .bind(hash)
+        .bind(iterations)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() == 1)
     }
 
     // ==================== Brief Cache Operations ====================
@@ -914,6 +1041,73 @@ mod tests {
             .unwrap();
         let c = db.get_notification_channels("u1").await.unwrap().unwrap();
         assert!(c.telegram_configured());
+    }
+
+    #[tokio::test]
+    async fn test_account_link() {
+        let db = Database::new("sqlite::memory:").await.unwrap();
+        db.run_migrations().await.unwrap();
+
+        // Name account u1 with handle "alice".
+        assert!(db
+            .create_account_link("alice", "u1", "salt", "hash", 100_000)
+            .await
+            .unwrap());
+        // The handle is taken — a second claim (even by another user) fails.
+        assert!(!db
+            .create_account_link("alice", "u2", "s2", "h2", 100_000)
+            .await
+            .unwrap());
+
+        let link = db.get_account_link("alice").await.unwrap().unwrap();
+        assert_eq!(link.user_id, "u1");
+        assert_eq!(link.hash, "hash");
+        assert_eq!(link.iterations, 100_000);
+
+        assert_eq!(
+            db.get_link_for_user("u1").await.unwrap().as_deref(),
+            Some("alice")
+        );
+        assert!(db.get_account_link("bob").await.unwrap().is_none());
+        assert!(db.get_link_for_user("u2").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_alerts_crud() {
+        let db = Database::new("sqlite::memory:").await.unwrap();
+        db.run_migrations().await.unwrap();
+        db.create_alert("u1", "Ukraine", 7).await.unwrap();
+        db.create_alert("u1", "Taiwan", 5).await.unwrap();
+        db.create_alert("u2", "Iran", 8).await.unwrap();
+
+        // Listing is scoped to the owner.
+        let mine = db.get_alerts("u1").await.unwrap();
+        assert_eq!(mine.len(), 2);
+        assert_eq!(db.count_alerts("u1").await.unwrap(), 2);
+
+        // A user can't delete someone else's alert.
+        let other_id = db.get_alerts("u2").await.unwrap()[0].id;
+        assert!(!db.delete_alert("u1", other_id).await.unwrap());
+
+        // Update threshold is owner-scoped and reflected on read.
+        let a0 = db.get_alerts("u1").await.unwrap()[0].id;
+        assert!(db.update_alert_threshold("u1", a0, 9).await.unwrap());
+        assert!(!db.update_alert_threshold("u2", a0, 1).await.unwrap());
+        let updated = db
+            .get_alerts("u1")
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == a0)
+            .unwrap();
+        assert_eq!(updated.threshold, 9);
+
+        // Deleting an owned alert removes exactly it.
+        let one = mine[0].id;
+        assert!(db.delete_alert("u1", one).await.unwrap());
+        assert_eq!(db.get_alerts("u1").await.unwrap().len(), 1);
+        // Deleting again is a no-op.
+        assert!(!db.delete_alert("u1", one).await.unwrap());
     }
 
     #[tokio::test]

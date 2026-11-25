@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About — WorldMonitor Core · Real-Time Global Intelligence</title>
+    <meta name="description" content="WorldMonitor Core is a real-time global intelligence monitor built as one Rust binary. Fuses GDELT, NASA EONET and curated RSS. Open-source core, Stripe billing, HMAC-verified webhooks, PBKDF2-hashed credentials.">
+    <meta name="keywords" content="WorldMonitor Core about, GDELT intelligence, NASA EONET, OSINT platform, Rust Axum SaaS, open source intelligence">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+    <meta name="color-scheme" content="dark light">
+    <meta name="theme-color" content="#0a0a0f">
+    <link rel="canonical" href="{{BASE_URL}}/about">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="alternate" type="text/markdown" href="/llms-full.txt">
+    <link rel="stylesheet" href="/page.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="WorldMonitor Core">
+    <meta property="og:title" content="About — WorldMonitor Core">
+    <meta property="og:description" content="Why WorldMonitor Core exists, how it works, where the data comes from, and the trust signals that back it.">
+    <meta property="og:url" content="{{BASE_URL}}/about">
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "BreadcrumbList",
+                "itemListElement": [
+                    { "@type": "ListItem", "position": 1, "name": "Home", "item": "{{BASE_URL}}/" },
+                    { "@type": "ListItem", "position": 2, "name": "About", "item": "{{BASE_URL}}/about" }
+                ]
+            },
+            {
+                "@type": "AboutPage",
+                "name": "About WorldMonitor Core",
+                "url": "{{BASE_URL}}/about",
+                "about": { "@type": "SoftwareApplication", "name": "WorldMonitor Core" }
+            },
+            {
+                "@type": "Organization",
+                "name": "WorldMonitor Core",
+                "url": "{{BASE_URL}}/",
+                "sameAs": ["https://github.com/dnzengou/wm-agents-claude"],
+                "foundingDate": "2026",
+                "description": "Maintainer of WorldMonitor Core, a real-time global intelligence monitor."
+            }
+        ]
+    }
+    </script>
+</head>
+<body>
+    <nav>
+        <a href="/">⚡ Home</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/about" class="active">About</a>
+        <a href="/faq">FAQ</a>
+        <a href="/docs/api">API docs</a>
+    </nav>
+
+    <h1>About WorldMonitor Core</h1>
+    <p class="lead">A real-time awareness feed for the kinds of events a 24/7 ops center would track — but affordable to self-host and small enough to embed in another product.</p>
+
+    <h2>Why it exists</h2>
+    <p>Most tools for real-time geopolitical / cyber / natural-event awareness fall in one of two camps: enterprise threat-intelligence platforms costing tens of thousands a year, or DIY stacks the user has to assemble themselves. WorldMonitor Core splits the difference. It is one open-source binary that fuses three public feeds into a single severity-scored map, with an LLM-written country brief one click away.</p>
+
+    <h2>How it works</h2>
+    <p>The ingestion layer pulls <a href="https://www.gdeltproject.org/">GDELT 2.1</a> geo-events, <a href="https://eonet.gsfc.nasa.gov/">NASA EONET v3</a> natural events, and a curated RSS set (Reuters, AP, ArsTechnica, KrebsOnSecurity, SpaceNews, Al Jazeera, RFI, BBC) every 15 minutes, classifies each item into a domain (<code>geopolitical</code>, <code>natural</code>, <code>cyber</code>, <code>nuclear</code>, …), scores severity 1–10 deterministically using feature detectors, deduplicates by headline hash, and batch-inserts the survivors into an embedded SQLite database. A Tokio broadcast channel then fans the new batch to every connected Server-Sent-Events subscriber without polling, and the <a href="/feed.atom">Atom feed</a> and <a href="/api/intelligence">JSON API</a> are regenerated from the same cache.</p>
+
+    <h2>Transparency &amp; trust</h2>
+    <ul>
+        <li><strong>Deterministic scoring.</strong> Severity is a function of feature detectors, not an LLM — reproducible across restarts and auditable in source.</li>
+        <li><strong>Attribution.</strong> Every event card links back to its upstream source URL. We classify and index, we don't republish.</li>
+        <li><strong>Security.</strong> Stripe webhooks verified with HMAC-SHA256. Credential comparisons constant-time. Passphrases stored as PBKDF2-SHA256 with per-record random salt. Coordinated-disclosure contact at <a href="/.well-known/security.txt">/.well-known/security.txt</a>.</li>
+        <li><strong>Privacy.</strong> Per-browser identity is a UUID in localStorage. Linking an account stores a handle + salt + hash, never the passphrase.</li>
+        <li><strong>Open-source.</strong> Repo: <a href="https://github.com/dnzengou/wm-agents-claude">github.com/dnzengou/wm-agents-claude</a>.</li>
+    </ul>
+
+    <h2>Architecture highlights</h2>
+    <div class="chips">
+        <span class="chip">Rust · Axum</span>
+        <span class="chip">SQLite (embedded)</span>
+        <span class="chip">Tokio broadcast SSE</span>
+        <span class="chip">PBKDF2 · HMAC-SHA256</span>
+        <span class="chip">Preact + htm (no bundler)</span>
+        <span class="chip">No CDN</span>
+        <span class="chip">OpenAPI 3.1</span>
+        <span class="chip">Atom 1.0 · JSON-LD · llms.txt</span>
+    </div>
+    <p>One Rust binary. SQLite embedded. No queue, no cluster. ~256 MB of RAM and outbound HTTPS are enough. The frontend is Preact + <code>htm</code> vendored at <code>/vendor/*.mjs</code> — no CDN dependency, no bundler step, works offline after first load.</p>
+
+    <h2>For AI agents</h2>
+    <p>The service is designed to be driven by AI agents as a first-class client, not just by a browser. Three artifacts make that trivial: the <a href="/openapi.yaml">OpenAPI 3.1 spec</a>, the <a href="/.well-known/ai-plugin.json">ChatGPT Actions manifest</a>, and the <a href="/feed.atom">Atom 1.0 feed</a>. See <a href="/docs/api">the API docs</a> or <a href="/llms-full.txt">llms-full.txt</a>.</p>
+
+    <h2>Maintainer</h2>
+    <p>WorldMonitor Core is maintained on GitHub at <a href="https://github.com/dnzengou/wm-agents-claude">dnzengou/wm-agents-claude</a>. For business inquiries, Team / annual plans or security disclosure, see the links above.</p>
+
+    <footer>
+        <a href="/">⚡ Home</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/about">About</a>
+        <a href="/faq">FAQ</a>
+        <a href="/docs/api">API docs</a>
+        <a href="/llms.txt">llms.txt</a>
+        <a href="/.well-known/security.txt">security.txt</a>
+        <a href="https://github.com/dnzengou/wm-agents-claude">GitHub</a>
+    </footer>
+</body>
+</html>

@@ -43,6 +43,45 @@ const API = {
         return { 'X-User-Id': this.uid(), ...extra };
     },
 
+    // ---- Cross-device sign-in (handle + passphrase) -------------------------
+
+    // Whether this browser's account is named for sync ({ user_id, linked, handle }).
+    async accountStatus() {
+        const res = await fetch(`${this.baseUrl}/api/account/status`, {
+            headers: this.authHeaders()
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to load account');
+        return data;
+    },
+
+    // Name the current account so it can be adopted elsewhere.
+    async linkAccount(handle, passphrase) {
+        const res = await fetch(`${this.baseUrl}/api/account/link`, {
+            method: 'POST',
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ handle, passphrase })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to link account');
+        return data;
+    },
+
+    // Adopt the account a handle + passphrase points to: switch this browser's
+    // identity to it so every endpoint resolves to that account.
+    async signIn(handle, passphrase) {
+        const res = await fetch(`${this.baseUrl}/api/account/signin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ handle, passphrase })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Sign-in failed');
+        try { localStorage.setItem('wm_uid', data.user_id); } catch { /* storage blocked */ }
+        this._uid = data.user_id;
+        return data;
+    },
+
     async getIntelligence() {
         const res = await fetch(`${this.baseUrl}/api/intelligence`);
         if (!res.ok) throw new Error('Failed to fetch intelligence');
@@ -89,7 +128,43 @@ const API = {
             headers: this.authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ country, threshold })
         });
-        return res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to create alert');
+        return data;
+    },
+
+    // List the caller's alert subscriptions + their tier cap ({ alerts, max_alerts }).
+    async getAlerts() {
+        const res = await fetch(`${this.baseUrl}/api/alerts`, {
+            headers: this.authHeaders()
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to load alerts');
+        return data;
+    },
+
+    async deleteAlert(id) {
+        const res = await fetch(`${this.baseUrl}/api/alerts/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: this.authHeaders()
+        });
+        if (!res.ok && res.status !== 204) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed to delete alert');
+        }
+        return true;
+    },
+
+    // Change an alert's severity threshold in place.
+    async updateAlert(id, threshold) {
+        const res = await fetch(`${this.baseUrl}/api/alerts/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ threshold })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to update alert');
+        return data;
     },
 
     async getTier() {
@@ -582,7 +657,7 @@ function WorldMap({ data, onSelect }) {
 }
 
 // ============== Brief Component ==============
-function BriefView({ country, onBack }) {
+function BriefView({ country, onBack, onSetAlert }) {
     const [brief, setBrief] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -647,11 +722,11 @@ function BriefView({ country, onBack }) {
             `}
 
             <button class="btn" onClick=${onBack}>Back to Global Map</button>
-            <button class="btn secondary" onClick=${() => {
-                API.createAlert(country, 5).then(() => alert(`Alert set for ${country}`));
-            }}>
-                🔔 Set Alert for ${country}
-            </button>
+            ${country !== 'Global' && onSetAlert && htmlx`
+                <button class="btn secondary" onClick=${() => onSetAlert(country)}>
+                    🔔 Set Alert for ${country}
+                </button>
+            `}
         </div>
     `;
 }
@@ -1005,8 +1080,210 @@ function LockedPanel({ icon, title, need, desc }) {
     `;
 }
 
+// ============== Settings: Alert subscriptions ==============
+function AlertsPanel({ initialCountry, onConsumed }) {
+    const [alerts, setAlerts] = useState([]);
+    const [maxAlerts, setMaxAlerts] = useState(null);
+    const [country, setCountry] = useState(initialCountry || '');
+    const [threshold, setThreshold] = useState('5');
+    const [msg, setMsg] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const panelRef = useRef(null);
+
+    const refresh = useCallback(async () => {
+        try {
+            const r = await API.getAlerts();
+            setAlerts(r.alerts || []);
+            setMaxAlerts(r.max_alerts ?? null);
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    // When deep-linked from a brief, surface the panel and clear the prefill so
+    // it doesn't stick on later manual visits.
+    useEffect(() => {
+        if (initialCountry) {
+            panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            onConsumed?.();
+        }
+    }, []);
+
+    const add = useCallback(async () => {
+        const c = country.trim();
+        if (!c) { setMsg({ ok: false, text: 'Enter a country.' }); return; }
+        setBusy(true); setMsg(null);
+        try {
+            await API.createAlert(c, Number(threshold));
+            setCountry('');
+            setMsg({ ok: true, text: `Alert added for ${c}.` });
+            refresh();
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+        setBusy(false);
+    }, [country, threshold, refresh]);
+
+    const remove = useCallback(async (id) => {
+        setMsg(null);
+        try { await API.deleteAlert(id); refresh(); }
+        catch (e) { setMsg({ ok: false, text: e.message }); }
+    }, [refresh]);
+
+    const edit = useCallback(async (id, newThreshold) => {
+        setMsg(null);
+        try {
+            await API.updateAlert(id, Number(newThreshold));
+            setMsg({ ok: true, text: 'Threshold updated.' });
+            refresh();
+        } catch (e) { setMsg({ ok: false, text: e.message }); }
+    }, [refresh]);
+
+    const atCap = maxAlerts != null && alerts.length >= maxAlerts;
+    const sevClass = s => s >= 8 ? 'sev-high' : s >= 5 ? 'sev-med' : 'sev-low';
+
+    return htmlx`
+        <div class="panel" ref=${panelRef}>
+            <div class="panel-head">
+                <h3>🔔 Alert Subscriptions</h3>
+                <span class="badge">${maxAlerts == null ? `${alerts.length}` : `${alerts.length} / ${maxAlerts}`}</span>
+            </div>
+            <p class="panel-sub">Get notified when a country's events meet a severity threshold. These drive your Slack & Telegram delivery.</p>
+            <div class="form-row">
+                <input placeholder="Country (e.g. Ukraine)" value=${country}
+                    onInput=${e => setCountry(e.target.value)} />
+                <select value=${threshold} onChange=${e => setThreshold(e.target.value)} title="Minimum severity">
+                    ${[3, 5, 7, 8].map(v => htmlx`<option value=${String(v)}>sev ≥ ${v}</option>`)}
+                </select>
+                <button class="btn-sm" onClick=${add} disabled=${busy || atCap}>
+                    ${busy ? 'Adding…' : 'Add'}
+                </button>
+            </div>
+            ${atCap && htmlx`<p class="muted">Free tier is capped at ${maxAlerts} alerts. <span class="warn">Upgrade to Pro</span> for unlimited.</p>`}
+            ${msg && htmlx`<p class="msg ${msg.ok ? 'ok' : 'err'}">${msg.text}</p>`}
+            ${alerts.length === 0
+                ? htmlx`<p class="muted">No alerts yet.</p>`
+                : alerts.map(a => htmlx`
+                    <div class="key-row" key=${a.id}>
+                        <div style="display:flex; align-items:center; gap:0.6rem; min-width:0;">
+                            <span class="sev ${sevClass(a.threshold)}">${a.threshold}</span>
+                            <div style="min-width:0;">
+                                <div class="history-headline">${a.country}</div>
+                                <div class="key-meta">${a.created_at ? `since ${new Date(a.created_at).toLocaleDateString()}` : 'active'}</div>
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:0.4rem; flex-shrink:0;">
+                            <select class="sev-edit" title="Change severity threshold" value=${String(a.threshold)}
+                                onChange=${e => edit(a.id, e.target.value)}>
+                                ${Array.from(new Set([3, 5, 7, 8, 10, a.threshold])).sort((x, y) => x - y)
+                                    .map(v => htmlx`<option value=${String(v)}>≥ ${v}</option>`)}
+                            </select>
+                            <button class="btn-sm danger" onClick=${() => remove(a.id)}>Remove</button>
+                        </div>
+                    </div>
+                `)}
+        </div>
+    `;
+}
+
+// ============== Settings: Account sync (cross-device sign-in) ==============
+// Two modes:
+//  - Unlinked: name this browser's account with a handle + passphrase so it can
+//    be adopted elsewhere. On success, the panel flips to "linked" state.
+//  - Linked:   show the handle and offer to sign in on a different device.
+// A separate "Already have an account?" row calls signIn: on success, this
+// browser's identity switches to the adopted account and we reload so every
+// panel re-fetches with the new uid.
+function AccountPanel() {
+    const [status, setStatus] = useState(null);
+    const [handle, setHandle] = useState('');
+    const [passphrase, setPassphrase] = useState('');
+    const [linkMsg, setLinkMsg] = useState(null);
+    const [linking, setLinking] = useState(false);
+    const [signHandle, setSignHandle] = useState('');
+    const [signPass, setSignPass] = useState('');
+    const [signMsg, setSignMsg] = useState(null);
+    const [signing, setSigning] = useState(false);
+
+    const refresh = useCallback(async () => {
+        try { setStatus(await API.accountStatus()); }
+        catch (e) { setLinkMsg({ ok: false, text: e.message }); }
+    }, []);
+    useEffect(() => { refresh(); }, [refresh]);
+
+    const link = useCallback(async () => {
+        const h = handle.trim();
+        if (!h) { setLinkMsg({ ok: false, text: 'Pick a handle.' }); return; }
+        if (passphrase.length < 8) { setLinkMsg({ ok: false, text: 'Passphrase must be at least 8 characters.' }); return; }
+        setLinking(true); setLinkMsg(null);
+        try {
+            const r = await API.linkAccount(h, passphrase);
+            setLinkMsg({ ok: true, text: r.message || `Linked as ${h}.` });
+            setPassphrase('');
+            refresh();
+        } catch (e) { setLinkMsg({ ok: false, text: e.message }); }
+        setLinking(false);
+    }, [handle, passphrase, refresh]);
+
+    const signin = useCallback(async () => {
+        const h = signHandle.trim();
+        if (!h || signPass.length < 1) { setSignMsg({ ok: false, text: 'Enter handle and passphrase.' }); return; }
+        setSigning(true); setSignMsg(null);
+        try {
+            await API.signIn(h, signPass);
+            setSignMsg({ ok: true, text: 'Signed in — reloading…' });
+            // Reload so every panel re-fetches under the adopted uid.
+            setTimeout(() => { try { location.reload(); } catch { /* noop */ } }, 400);
+        } catch (e) { setSignMsg({ ok: false, text: e.message }); setSigning(false); }
+    }, [signHandle, signPass]);
+
+    const linked = !!(status && status.linked);
+    return htmlx`
+        <div class="panel">
+            <div class="panel-head">
+                <h3>👤 Account Sync</h3>
+                <span class="badge">${linked ? 'linked' : 'local only'}</span>
+            </div>
+            <p class="panel-sub">
+                Name this account with a handle + passphrase so you can sign in on another device —
+                your tier, alerts, history and API keys follow the handle, not the browser.
+            </p>
+            ${linked
+                ? htmlx`
+                    <div class="key-row">
+                        <div style="min-width:0;">
+                            <div class="history-headline">${status.handle}</div>
+                            <div class="key-meta">Sign in with this handle + passphrase on another device.</div>
+                        </div>
+                    </div>
+                `
+                : htmlx`
+                    <div class="form-row">
+                        <input placeholder="Handle (e.g. alice)" value=${handle}
+                            onInput=${e => setHandle(e.target.value)} autocomplete="off" />
+                        <input placeholder="Passphrase (≥ 8 chars)" value=${passphrase} type="password"
+                            onInput=${e => setPassphrase(e.target.value)} autocomplete="new-password" />
+                        <button class="btn-sm" onClick=${link} disabled=${linking}>
+                            ${linking ? 'Linking…' : 'Link'}
+                        </button>
+                    </div>
+                `}
+            ${linkMsg && htmlx`<p class="msg ${linkMsg.ok ? 'ok' : 'err'}">${linkMsg.text}</p>`}
+
+            <p class="panel-sub" style="margin-top:0.9rem;">Already have an account? Sign in on this device:</p>
+            <div class="form-row">
+                <input placeholder="Handle" value=${signHandle}
+                    onInput=${e => setSignHandle(e.target.value)} autocomplete="off" />
+                <input placeholder="Passphrase" value=${signPass} type="password"
+                    onInput=${e => setSignPass(e.target.value)} autocomplete="current-password" />
+                <button class="btn-sm" onClick=${signin} disabled=${signing}>
+                    ${signing ? 'Signing in…' : 'Sign in'}
+                </button>
+            </div>
+            ${signMsg && htmlx`<p class="msg ${signMsg.ok ? 'ok' : 'err'}">${signMsg.text}</p>`}
+        </div>
+    `;
+}
+
 // ============== Settings view ==============
-function Settings({ tier }) {
+function Settings({ tier, alertPrefill, onPrefillConsumed }) {
     const isPaid = !!tier && tier.tier !== 'free';
     const isEnterprise = !!tier && tier.tier === 'enterprise';
     return htmlx`
@@ -1014,7 +1291,9 @@ function Settings({ tier }) {
             <div class="account-note">
                 Account <code>${API.uid()}</code> · saved to this browser
             </div>
+            <${AccountPanel} />
             <${HistoryPanel} tier=${tier} />
+            <${AlertsPanel} initialCountry=${alertPrefill} onConsumed=${onPrefillConsumed} />
             <${NotificationsPanel} isPaid=${isPaid} />
             ${isEnterprise
                 ? htmlx`<${ApiKeysPanel} />`
@@ -1036,6 +1315,7 @@ function App() {
     const [tier, setTier] = useState(null);
     const [upgrading, setUpgrading] = useState(false);
     const [notice, setNotice] = useState(null);
+    const [alertPrefill, setAlertPrefill] = useState(null);
 
     // Initial load
     useEffect(() => {
@@ -1142,6 +1422,12 @@ function App() {
         setView('map');
     }, []);
 
+    // Deep-link from a brief into the alerts panel with the country prefilled.
+    const handleSetAlert = useCallback((country) => {
+        setAlertPrefill(country);
+        setView('settings');
+    }, []);
+
     // Handle onboarding complete
     const handleOnboardingComplete = useCallback(() => {
         setView('map');
@@ -1235,10 +1521,13 @@ function App() {
                     <${BriefView}
                         country=${selectedCountry || 'Global'}
                         onBack=${handleBack}
+                        onSetAlert=${handleSetAlert}
                     />
                 `}
                 ${view === 'settings' && htmlx`
-                    <${Settings} tier=${tier} />
+                    <${Settings} tier=${tier}
+                        alertPrefill=${alertPrefill}
+                        onPrefillConsumed=${() => setAlertPrefill(null)} />
                 `}
             </div>
         </div>

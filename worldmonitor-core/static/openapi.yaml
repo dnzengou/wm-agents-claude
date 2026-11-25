@@ -1,0 +1,275 @@
+openapi: 3.1.0
+info:
+    title: WorldMonitor Core API
+    summary: Real-time global intelligence API — events, country briefs, alerts.
+    description: |
+        The public, machine-consumable surface of WorldMonitor Core. This
+        specification is published so AI agents, ChatGPT Actions, Claude
+        Agents and OpenAPI-aware retrieval tools can integrate with the
+        live service without reverse-engineering the frontend.
+
+        Three authentication modes are recognised by every endpoint:
+
+        1. **`Authorization: Bearer wm_…`** — Enterprise API key (recommended
+           for agents). Issued from the Settings UI and revocable there.
+        2. **`X-API-Key: wm_…`** — same credential, header alternative.
+        3. **`X-User-Id: …`** — per-browser identity used by the SPA. Agents
+           should not use this unless prototyping against a disposable id.
+    version: 0.2.0
+    contact:
+        name: WorldMonitor Core
+        url: https://github.com/dnzengou/wm-agents-claude
+    license:
+        name: Proprietary (service) / Open-source (repo)
+        url: https://github.com/dnzengou/wm-agents-claude
+
+servers:
+    - url: "{{BASE_URL}}"
+      description: Live deployment.
+
+tags:
+    - name: intelligence
+      description: Live geopolitical, natural and cyber event feed.
+    - name: brief
+      description: On-demand natural-language country briefs.
+    - name: geo
+      description: Country-level enrichment.
+    - name: alerts
+      description: Severity-triggered alert subscriptions delivered to Slack / Telegram.
+    - name: history
+      description: Historical event lookup (tier-gated).
+    - name: account
+      description: Cross-device sign-in (handle + passphrase).
+
+security:
+    - BearerWmKey: []
+    - ApiKeyHeader: []
+    - UserIdHeader: []
+
+paths:
+    /api/intelligence:
+        get:
+            tags: [intelligence]
+            operationId: listIntelligenceEvents
+            summary: List the latest 100 fused intelligence events.
+            description: |
+                Returns up to 100 of the most recent fused events across every
+                domain. Cached ~30s server-side; for lower-latency streaming
+                use `GET /api/stream` (Server-Sent Events).
+            responses:
+                "200":
+                    description: Latest events.
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: "#/components/schemas/IntelEvent"
+
+    /api/brief:
+        post:
+            tags: [brief]
+            operationId: generateCountryBrief
+            summary: Generate a natural-language brief for a country.
+            description: |
+                Composes a short narrative of the recent intelligence signal
+                for the given country. Rate-limited per tier.
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [country]
+                            properties:
+                                country: { type: string, example: "Ukraine" }
+                                interests:
+                                    type: array
+                                    items: { type: string }
+                                    description: Optional topical hints (e.g. ["energy", "cyber"]).
+            responses:
+                "200":
+                    description: Brief composed.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    country: { type: string }
+                                    summary: { type: string }
+                "429":
+                    description: Rate limit exceeded for this tier.
+
+    /api/geo:
+        get:
+            tags: [geo]
+            operationId: getGeoEnrichment
+            summary: Country metadata used by the map renderer.
+            responses:
+                "200":
+                    description: Country rows.
+                    content:
+                        application/json:
+                            schema: { type: object }
+
+    /api/alerts:
+        get:
+            tags: [alerts]
+            operationId: listAlerts
+            summary: List the caller's alert subscriptions.
+            responses:
+                "200":
+                    description: Alert list + tier cap.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    alerts:
+                                        type: array
+                                        items: { $ref: "#/components/schemas/Alert" }
+                                    max_alerts: { type: integer, nullable: true }
+                "401":
+                    description: Invalid or revoked API key.
+        post:
+            tags: [alerts]
+            operationId: createAlert
+            summary: Subscribe to events for a country at or above a severity threshold.
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [country, threshold]
+                            properties:
+                                country: { type: string, example: "Ukraine" }
+                                threshold: { type: integer, minimum: 1, maximum: 10, example: 5 }
+            responses:
+                "200": { description: Created. }
+                "403": { description: Free-tier alert cap reached. }
+                "409": { description: Duplicate alert. }
+
+    /api/alerts/{id}:
+        parameters:
+            - in: path
+              name: id
+              required: true
+              schema: { type: integer }
+        delete:
+            tags: [alerts]
+            operationId: deleteAlert
+            summary: Delete one of your alerts.
+            responses:
+                "200": { description: Deleted. }
+                "404": { description: Not yours or not found. }
+        patch:
+            tags: [alerts]
+            operationId: updateAlertThreshold
+            summary: Change an alert's severity threshold.
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [threshold]
+                            properties:
+                                threshold: { type: integer, minimum: 1, maximum: 10 }
+            responses:
+                "200": { description: Updated. }
+                "404": { description: Not yours or not found. }
+
+    /api/history:
+        get:
+            tags: [history]
+            operationId: getEventHistory
+            summary: Historical events within your tier's lookback window.
+            description: 7 days on Free; 90 days on Pro; 365 days on Enterprise.
+            parameters:
+                - in: query
+                  name: country
+                  schema: { type: string }
+                - in: query
+                  name: domain
+                  schema: { type: string }
+                - in: query
+                  name: min_severity
+                  schema: { type: integer, minimum: 1, maximum: 10 }
+            responses:
+                "200":
+                    description: Historical events.
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items: { $ref: "#/components/schemas/IntelEvent" }
+                "401":
+                    description: Invalid API key.
+
+    /api/account/status:
+        get:
+            tags: [account]
+            operationId: getAccountStatus
+            summary: Whether the current identity is linked to a handle for cross-device sign-in.
+            responses:
+                "200":
+                    description: Status.
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    user_id: { type: string }
+                                    linked: { type: boolean }
+                                    handle: { type: string, nullable: true }
+
+components:
+    securitySchemes:
+        BearerWmKey:
+            type: http
+            scheme: bearer
+            bearerFormat: "wm_…"
+            description: Enterprise API key issued from the Settings UI.
+        ApiKeyHeader:
+            type: apiKey
+            in: header
+            name: X-API-Key
+            description: Same `wm_` credential as BearerWmKey, header alternative.
+        UserIdHeader:
+            type: apiKey
+            in: header
+            name: X-User-Id
+            description: Per-browser identity (SPA only). Agents should prefer BearerWmKey.
+
+    schemas:
+        IntelEvent:
+            type: object
+            required: [id, country, lat, lon, severity, headline, source, timestamp, domain]
+            properties:
+                id: { type: string, description: Deterministic id derived from headline hash. }
+                country: { type: string }
+                lat: { type: number, format: double }
+                lon: { type: number, format: double }
+                severity: { type: integer, minimum: 1, maximum: 10 }
+                headline: { type: string }
+                source: { type: string, description: Upstream feed (GDELT, EONET, Reuters, …). }
+                timestamp: { type: integer, format: int64, description: Unix epoch seconds. }
+                created_at: { type: string, format: date-time, nullable: true }
+                domain:
+                    type: string
+                    enum: [geopolitical, cyber, energy, climate, wildfire, water, natural, nuclear, mining, deforestation, ocean, demographics, uninsurability, critical_minerals]
+                link: { type: string, format: uri, nullable: true, description: Upstream article URL (RSS feeds only). }
+
+        Alert:
+            type: object
+            required: [id, country, threshold]
+            properties:
+                id: { type: integer, format: int64 }
+                country: { type: string }
+                threshold: { type: integer, minimum: 1, maximum: 10 }
+                created_at: { type: string, format: date-time, nullable: true }
+
+externalDocs:
+    description: Full reference (Markdown, agent-friendly).
+    url: "{{BASE_URL}}/llms-full.txt"

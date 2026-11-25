@@ -25,7 +25,8 @@ mod models;
 mod notify;
 
 use api::{
-    alerts, billing, brief, geo, history, intelligence, keys, notifications, sse, sync, user,
+    account, alerts, billing, brief, feed, geo, history, intelligence, keys, notifications, sse,
+    sync, user,
 };
 use cache::Cache;
 use db::Database;
@@ -174,8 +175,15 @@ async fn health() -> axum::Json<serde_json::Value> {
 
 // ─── Static file serving ─────────────────────────────────────────────────────
 
-async fn serve_frontend() -> axum::response::Html<&'static str> {
-    axum::response::Html(include_str!("../static/index.html"))
+async fn serve_frontend(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::response::Response {
+    use axum::http::header;
+    // Template `{{BASE_URL}}` into canonical, og:url, and the JSON-LD graph
+    // so the live origin propagates without a per-host rebuild.
+    let body =
+        include_str!("../static/index.html").replace("{{BASE_URL}}", &state.config.app_base_url);
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response()
 }
 
 /// Serve a JS module with the correct MIME type. ES modules are rejected by
@@ -190,10 +198,21 @@ fn js(body: &'static str) -> axum::response::Response {
         .into_response()
 }
 
+/// Serve a text/markdown/xml/manifest file with `{{BASE_URL}}` replaced by
+/// the live origin (from `APP_BASE_URL`), so sitemap, robots and llms always
+/// advertise the real deployment URL without needing a rebuild per host.
+fn tpl(body: &'static str, base_url: &str, content_type: &'static str) -> axum::response::Response {
+    use axum::http::header;
+    let rendered = body.replace("{{BASE_URL}}", base_url);
+    ([(header::CONTENT_TYPE, content_type)], rendered).into_response()
+}
+
 async fn serve_static(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> axum::response::Response {
     use axum::http::StatusCode;
+    let base = state.config.app_base_url.as_str();
     match path.as_str() {
         "app.js" => js(include_str!("../static/app.js")),
         // Locally-vendored ESM dependencies (no CDN). See static/vendor/.
@@ -201,6 +220,101 @@ async fn serve_static(
         "vendor/hooks.mjs" => js(include_str!("../static/vendor/hooks.mjs")),
         "vendor/htm.mjs" => js(include_str!("../static/vendor/htm.mjs")),
         "vendor/htm-preact.mjs" => js(include_str!("../static/vendor/htm-preact.mjs")),
+        // ── AI-agent / SEO well-known files ──────────────────────────────
+        // Public, BASE_URL-templated at response time so the live origin
+        // propagates into sitemap and canonical-URL fields without a rebuild.
+        "robots.txt" => tpl(
+            include_str!("../static/robots.txt"),
+            base,
+            "text/plain; charset=utf-8",
+        ),
+        "sitemap.xml" => tpl(
+            include_str!("../static/sitemap.xml"),
+            base,
+            "application/xml; charset=utf-8",
+        ),
+        "llms.txt" => tpl(
+            include_str!("../static/llms.txt"),
+            base,
+            "text/markdown; charset=utf-8",
+        ),
+        "llms-full.txt" => tpl(
+            include_str!("../static/llms-full.txt"),
+            base,
+            "text/markdown; charset=utf-8",
+        ),
+        "ai.txt" => tpl(
+            include_str!("../static/ai.txt"),
+            base,
+            "text/plain; charset=utf-8",
+        ),
+        "humans.txt" => tpl(
+            include_str!("../static/humans.txt"),
+            base,
+            "text/plain; charset=utf-8",
+        ),
+        ".well-known/security.txt" => tpl(
+            include_str!("../static/security.txt"),
+            base,
+            "text/plain; charset=utf-8",
+        ),
+        "manifest.webmanifest" => tpl(
+            include_str!("../static/manifest.webmanifest"),
+            base,
+            "application/manifest+json; charset=utf-8",
+        ),
+        // ── Agent-facing API discovery ───────────────────────────────────
+        // OpenAPI 3.1 spec (yaml primary, json alias). Templated so the
+        // `servers:` block always advertises the live origin.
+        "openapi.yaml" | "openapi.yml" => tpl(
+            include_str!("../static/openapi.yaml"),
+            base,
+            "application/yaml; charset=utf-8",
+        ),
+        "openapi.json" => tpl(
+            include_str!("../static/openapi.yaml"),
+            base,
+            // Served as text/plain because the source is YAML; agents that
+            // specifically want JSON should fetch /openapi.yaml and parse.
+            // Keeping the .json alias discoverable (sitemap) is still useful.
+            "application/yaml; charset=utf-8",
+        ),
+        // ChatGPT Actions / plugin discovery manifest.
+        ".well-known/ai-plugin.json" => tpl(
+            include_str!("../static/ai-plugin.json"),
+            base,
+            "application/json; charset=utf-8",
+        ),
+        // ── Dedicated marketing + docs pages ─────────────────────────────
+        // Each is a standalone HTML page with its own meta + JSON-LD +
+        // BreadcrumbList. Crawlers index these as independent URLs, which
+        // is where the real commercial-SEO lift comes from.
+        "pricing" => tpl(
+            include_str!("../static/pricing.html"),
+            base,
+            "text/html; charset=utf-8",
+        ),
+        "about" => tpl(
+            include_str!("../static/about.html"),
+            base,
+            "text/html; charset=utf-8",
+        ),
+        "faq" => tpl(
+            include_str!("../static/faq.html"),
+            base,
+            "text/html; charset=utf-8",
+        ),
+        "docs/api" => tpl(
+            include_str!("../static/docs-api.html"),
+            base,
+            "text/html; charset=utf-8",
+        ),
+        // Shared stylesheet for the subpages (no templating — immutable).
+        "page.css" => (
+            [(axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8")],
+            include_str!("../static/page.css"),
+        )
+            .into_response(),
         _ => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
@@ -319,9 +433,20 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/stream", get(sse::handler)) // Kafka-style SSE fan-out
         .route("/api/brief", post(brief::handler))
         .route("/api/geo", get(geo::handler))
-        .route("/api/alerts", post(alerts::handler))
+        .route(
+            "/api/alerts",
+            get(alerts::list_handler).post(alerts::handler),
+        )
+        .route(
+            "/api/alerts/:id",
+            delete(alerts::delete_handler).patch(alerts::update_handler),
+        )
         .route("/api/sync", get(sync::handler))
         .route("/api/user", get(user::get_handler).post(user::post_handler))
+        // ── Account: cross-device sign-in (handle + passphrase) ──────────────
+        .route("/api/account/status", get(account::status_handler))
+        .route("/api/account/link", post(account::link_handler))
+        .route("/api/account/signin", post(account::signin_handler))
         // ── Paid-tier features ───────────────────────────────────────────────
         // 90-day history (Pro), API keys (Enterprise), Slack/Telegram delivery.
         .route("/api/history", get(history::handler))
@@ -340,6 +465,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/billing/checkout", post(billing::checkout_handler))
         .route("/api/billing/webhook", post(billing::webhook_handler))
         .route("/", get(serve_frontend))
+        // Public Atom feed of the live intelligence stream — agent- and
+        // feed-reader-friendly. Dynamic (reads the ingestion cache).
+        .route("/feed.atom", get(feed::handler))
         .route("/*path", get(serve_static))
         .layer(cors)
         .layer(CompressionLayer::new())
