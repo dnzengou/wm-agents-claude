@@ -25,7 +25,9 @@
     <link rel="sitemap" type="application/xml" href="/sitemap.xml">
     <!-- Agent-facing API discovery. -->
     <link rel="service" type="application/yaml" href="/openapi.yaml" title="OpenAPI 3.1 specification">
+    <link rel="service" type="application/json" href="/.well-known/trust.json" title="Trust & provenance manifest">
     <meta name="ai-plugin" content="/.well-known/ai-plugin.json">
+    <meta name="ai-trust-manifest" content="/.well-known/trust.json">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 
     <!-- Open Graph / social previews -->
@@ -622,6 +624,82 @@
             .country-popup { min-width: 180px; max-width: 250px; }
         }
         
+        /* Steward (contextual guide) */
+        .steward-fab {
+            position: fixed;
+            right: 1rem;
+            bottom: 4.25rem;
+            width: 3rem;
+            height: 3rem;
+            border-radius: 9999px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 1.25rem;
+            cursor: pointer;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+            z-index: 60;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .steward-fab:hover { background: rgba(59,130,246,0.12); }
+        .steward-dot {
+            position: absolute;
+            top: 6px; right: 8px;
+            width: 8px; height: 8px;
+            border-radius: 9999px;
+            background: var(--accent-orange, #f59e0b);
+            box-shadow: 0 0 0 2px var(--bg-card);
+        }
+        .steward {
+            position: fixed;
+            right: 1rem;
+            bottom: 4.25rem;
+            width: min(22rem, calc(100vw - 2rem));
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 0.9rem;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+            padding: 0.9rem 0.95rem 0.75rem;
+            z-index: 60;
+            color: var(--text-primary);
+        }
+        .steward-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.4rem;
+        }
+        .steward-close {
+            background: transparent;
+            border: 0;
+            color: var(--text-secondary);
+            font-size: 1.4rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0 0.25rem;
+        }
+        .steward-tip {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin: 0 0 0.75rem;
+        }
+        .steward-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            margin-bottom: 0.65rem;
+        }
+        .steward-actions .btn-sm { text-align: left; }
+        .steward-foot {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+        .steward-foot a { color: var(--accent-blue-light, #93c5fd); }
+
         /* Animations */
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }

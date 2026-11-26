@@ -285,6 +285,15 @@ async fn serve_static(
             base,
             "application/json; charset=utf-8",
         ),
+        // Machine-readable trust / provenance manifest for AI agents:
+        // data sources, licenses, severity methodology, verifiability,
+        // and discovery pointers. Lets downstream agents answer
+        // "should I trust this source?" without running the site.
+        ".well-known/trust.json" | "trust.json" => tpl(
+            include_str!("../static/trust.json"),
+            base,
+            "application/json; charset=utf-8",
+        ),
         // ── Dedicated marketing + docs pages ─────────────────────────────
         // Each is a standalone HTML page with its own meta + JSON-LD +
         // BreadcrumbList. Crawlers index these as independent URLs, which

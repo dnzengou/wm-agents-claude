@@ -731,103 +731,122 @@ function BriefView({ country, onBack, onSetAlert }) {
     `;
 }
 
-// ============== Onboarding Flow ==============
+// ============== Onboarding (single screen) ==============
+// One-screen welcome: pick interests (optional) and go. Notifications and
+// deeper setup move to the Steward, so the map is never more than one tap
+// away for a first-time visitor.
 function Onboarding({ onComplete }) {
-    const [step, setStep] = useState(1);
     const [interests, setInterests] = useState([]);
+    const [saving, setSaving] = useState(false);
 
-    const toggleInterest = (interest) => {
-        if (interests.includes(interest)) {
-            setInterests(interests.filter(i => i !== interest));
-        } else {
-            setInterests([...interests, interest]);
-        }
+    const toggle = (k) => setInterests(xs =>
+        xs.includes(k) ? xs.filter(i => i !== k) : [...xs, k]);
+
+    const start = async (skip) => {
+        setSaving(true);
+        try { await API.updateUser({ interests: skip ? [] : interests, countries: [] }); }
+        catch {}
+        onComplete();
     };
 
-    const saveAndProceed = async () => {
-        await API.updateUser({ interests, countries: [] });
-        if (step < 3) {
-            setStep(step + 1);
-        } else {
-            onComplete();
-        }
-    };
+    const topic = (k, icon, label) => htmlx`
+        <button class="btn secondary ${interests.includes(k) ? 'selected' : ''}"
+                onClick=${() => toggle(k)}>${icon} ${label}</button>`;
 
-    // Step 1: Welcome
-    if (step === 1) return htmlx`
-        <div class="onboarding fade-in">
-            <h2>⚡ WorldMonitor Core</h2>
-            <p>Real-time global intelligence from 150+ sources. Now 10× faster and 29× lighter.</p>
-            
-            <div class="features">
-                <div class="feature">
-                    <span class="feature-icon">🌍</span>
-                    <span class="feature-text">Global conflict monitoring in real-time</span>
-                </div>
-                <div class="feature">
-                    <span class="feature-icon">🤖</span>
-                    <span class="feature-text">AI-powered intelligence briefings</span>
-                </div>
-                <div class="feature">
-                    <span class="feature-icon">⚡</span>
-                    <span class="feature-text">Sub-second load times, mobile-first</span>
-                </div>
-            </div>
-            
-            <button class="btn" onClick=${() => setStep(2)}>Get Started</button>
-        </div>
-    `;
-
-    // Step 2: Interest Selection
-    if (step === 2) return htmlx`
-        <div class="onboarding fade-in">
-            <h2>What impacts you?</h2>
-            <p>Select your interests for a personalized dashboard:</p>
-            
-            <div class="interest-grid">
-                <button 
-                    class="btn secondary ${interests.includes('security') ? 'selected' : ''}"
-                    onClick=${() => toggleInterest('security')}>
-                    🛡️ Security
-                </button>
-                <button 
-                    class="btn secondary ${interests.includes('finance') ? 'selected' : ''}"
-                    onClick=${() => toggleInterest('finance')}>
-                    📈 Finance
-                </button>
-                <button 
-                    class="btn secondary ${interests.includes('climate') ? 'selected' : ''}"
-                    onClick=${() => toggleInterest('climate')}>
-                    🌍 Climate
-                </button>
-                <button 
-                    class="btn secondary ${interests.includes('tech') ? 'selected' : ''}"
-                    onClick=${() => toggleInterest('tech')}>
-                    💻 Technology
-                </button>
-            </div>
-            
-            <button class="btn" onClick=${saveAndProceed} disabled=${interests.length === 0}>
-                Continue
-            </button>
-        </div>
-    `;
-
-    // Step 3: Notifications
     return htmlx`
         <div class="onboarding fade-in">
-            <h2>Stay Informed</h2>
-            <p>Enable notifications for critical alerts in your regions of interest.</p>
-            
-            <button class="btn" onClick=${() => {
-                if ('Notification' in window) {
-                    Notification.requestPermission();
-                }
-                saveAndProceed();
-            }}>
-                Enable Notifications
+            <h2>⚡ WorldMonitor Core</h2>
+            <p>Live geopolitical, natural and cyber events from GDELT, NASA EONET and curated RSS — one Rust binary, no CDN.</p>
+            <p class="muted" style="font-size:0.85rem;margin-top:-1rem;">Pick what matters to you (optional) — you can change this anytime from Settings.</p>
+
+            <div class="interest-grid" style="margin-bottom:1.25rem;">
+                ${topic('security', '🛡️', 'Security')}
+                ${topic('finance', '📈', 'Finance')}
+                ${topic('climate', '🌍', 'Climate')}
+                ${topic('tech', '💻', 'Technology')}
+            </div>
+
+            <button class="btn" onClick=${() => start(false)} disabled=${saving}>
+                ${saving ? 'Opening…' : 'Open the live map →'}
             </button>
-            <button class="btn secondary" onClick=${saveAndProceed}>Skip for Now</button>
+            <button class="btn secondary" onClick=${() => start(true)} disabled=${saving}>
+                Skip — just show me the map
+            </button>
+        </div>
+    `;
+}
+
+// ============== Steward — contextual AI companion ===========================
+// A lightweight, dependency-free guide that lives in the corner of the app.
+// Scripted (no model call) so it's instant, offline-friendly and free to run.
+// It reads the current view and gives one short, actionable tip, plus 2–3
+// next-action suggestions. First visit auto-opens a welcome bubble; after
+// that it's dismissible and remembered via localStorage.
+const STEWARD_SCRIPT = {
+    map: {
+        tip: "You're looking at the live map. Each dot is an event — colour maps to severity (red ≥ 8). Tap a country for a brief.",
+        actions: [
+            { label: '📋 Open today\'s global brief', to: 'brief' },
+            { label: '🔔 Set an alert', to: 'settings' },
+        ],
+    },
+    brief: {
+        tip: "AI-generated country brief. Every claim links back to the source event — expand the attribution block to verify.",
+        actions: [
+            { label: '🌍 Back to the map', to: 'map' },
+            { label: '🔔 Alert me on this country', to: 'settings' },
+        ],
+    },
+    settings: {
+        tip: "Name your account with a handle + passphrase to sync across devices. Alerts, API keys and history live here too.",
+        actions: [
+            { label: '🌍 Back to the map', to: 'map' },
+            { label: '📚 Read the agent docs', href: '/docs/api' },
+        ],
+    },
+};
+
+function Steward({ view, setView }) {
+    const [open, setOpen] = useState(false);
+    const [seen, setSeen] = useState(true);
+
+    useEffect(() => {
+        try {
+            const dismissed = localStorage.getItem('wm_steward_seen') === '1';
+            if (!dismissed) { setOpen(true); setSeen(false); }
+        } catch { /* storage blocked — keep closed */ }
+    }, []);
+
+    const dismiss = () => {
+        setOpen(false); setSeen(true);
+        try { localStorage.setItem('wm_steward_seen', '1'); } catch {}
+    };
+
+    const script = STEWARD_SCRIPT[view] || STEWARD_SCRIPT.map;
+
+    if (!open) return htmlx`
+        <button class="steward-fab" aria-label="Open guide"
+                onClick=${() => setOpen(true)}>
+            ${seen ? '💬' : htmlx`<span>💬</span><span class="steward-dot" aria-hidden="true"></span>`}
+        </button>`;
+
+    return htmlx`
+        <div class="steward fade-in" role="dialog" aria-label="Guide">
+            <div class="steward-head">
+                <strong>⚡ Guide</strong>
+                <button class="steward-close" aria-label="Close" onClick=${dismiss}>×</button>
+            </div>
+            <p class="steward-tip">${script.tip}</p>
+            <div class="steward-actions">
+                ${script.actions.map(a => a.href
+                    ? htmlx`<a class="btn-sm" href=${a.href} target="_blank" rel="noopener">${a.label}</a>`
+                    : htmlx`<button class="btn-sm" onClick=${() => { setView(a.to); dismiss(); }}>${a.label}</button>`
+                )}
+            </div>
+            <p class="steward-foot">
+                No account needed · <a href="/faq" target="_blank" rel="noopener">FAQ</a> ·
+                <a href="/docs/api" target="_blank" rel="noopener">Agents API</a>
+            </p>
         </div>
     `;
 }
@@ -1468,7 +1487,7 @@ function App() {
                         <span style="margin-left:0.5rem; opacity:0.85;">Pro coming soon</span>
                     ` : htmlx`
                         <a href="#" onClick=${e => { e.preventDefault(); handleUpgrade('pro'); }}>
-                            ${upgrading ? 'Redirecting…' : 'Upgrade to Pro ($19/mo) →'}
+                            ${upgrading ? 'Redirecting…' : 'Upgrade to Pro ($9/mo) →'}
                         </a>
                     `}
                 </div>
@@ -1530,6 +1549,8 @@ function App() {
                         onPrefillConsumed=${() => setAlertPrefill(null)} />
                 `}
             </div>
+
+            <${Steward} view=${view} setView=${setView} />
         </div>
     `;
 }

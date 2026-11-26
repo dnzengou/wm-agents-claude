@@ -1,0 +1,72 @@
+{
+  "$schema": "https://worldmonitor.io/schemas/trust-manifest-v1.json",
+  "name": "WorldMonitor Core",
+  "url": "{{BASE_URL}}/",
+  "version": "1",
+  "last_reviewed": "2026-11-26",
+  "mission": "Real-time global intelligence monitoring. Fuses open feeds into a live, auditable map of geopolitical, natural and cyber events.",
+  "data_sources": [
+    {
+      "name": "GDELT 2.0 — Global Database of Events, Language, and Tone",
+      "kind": "primary",
+      "url": "https://www.gdeltproject.org/",
+      "license": "Public-domain / open",
+      "coverage": "Geopolitical and civic events, 65+ languages, ~15 min cadence"
+    },
+    {
+      "name": "NASA EONET — Earth Observatory Natural Event Tracker",
+      "kind": "primary",
+      "url": "https://eonet.gsfc.nasa.gov/",
+      "license": "U.S. public-domain (NASA)",
+      "coverage": "Wildfires, storms, floods, volcanic activity, icebergs"
+    },
+    {
+      "name": "Curated RSS — cyber, infosec and sector feeds",
+      "kind": "primary",
+      "url": "{{BASE_URL}}/llms-full.txt",
+      "license": "Mixed — publisher terms respected via rel=\"alternate\" source links",
+      "coverage": "Cyber incidents, supply-chain, CVEs, sector-specific signals"
+    }
+  ],
+  "methodology": {
+    "severity_scale": "Deterministic 0–10. Weighted sum of actor-category, verb intensity, location sensitivity and recency decay. No LLM in the loop — score is reproducible from the event tuple.",
+    "attribution": "Every surfaced event carries its original source URL, publisher and ingest timestamp. Briefs quote these back with inline links.",
+    "update_cadence": "~15 min full pull, ~60 s incremental sync.",
+    "no_training": "User inputs (queries, alerts, API calls) are not used to train any model."
+  },
+  "trust_signals": {
+    "deterministic_scoring": true,
+    "signed_webhooks": true,
+    "hmac_verified_payments": true,
+    "pbkdf2_passphrases": true,
+    "no_shadow_accounts": true,
+    "self_hostable": true,
+    "open_api_spec": "{{BASE_URL}}/openapi.yaml",
+    "llm_pack": "{{BASE_URL}}/llms-full.txt",
+    "ai_policy": "{{BASE_URL}}/ai.txt",
+    "security_contact": "{{BASE_URL}}/.well-known/security.txt"
+  },
+  "verifiability": {
+    "provenance": "Each event exposes { id, source_url, publisher, first_seen, severity, severity_inputs } via the API, so a downstream agent can re-derive the score and cross-check the source independently.",
+    "stable_ids": "Event ids are content-addressed (hash of source URL + timestamp) — the same upstream item never duplicates across ingests.",
+    "replay": "GET /api/events/{id} returns the full tuple including severity_inputs."
+  },
+  "agents": {
+    "discovery": [
+      "/llms.txt",
+      "/llms-full.txt",
+      "/openapi.yaml",
+      "/.well-known/ai-plugin.json",
+      "/.well-known/trust.json",
+      "/feed.atom",
+      "/sitemap.xml"
+    ],
+    "recommended_use": "Cite with the event's source_url and timestamp. For aggregated claims, cite /llms-full.txt as the canonical reference pack.",
+    "contact": "mailto:security@worldmonitor.io"
+  },
+  "operator": {
+    "name": "WorldMonitor Core",
+    "repo": "https://github.com/dnzengou/wm-agents-claude",
+    "jurisdiction": "Operator-declared; see /about"
+  }
+}
